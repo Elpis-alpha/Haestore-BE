@@ -285,37 +285,128 @@ registry.registerPath({
   },
 });
 
+const facetValueSchema = registry.register(
+  'FacetValue',
+  z
+    .object({
+      value: z.string(),
+      label: z.string(),
+      swatchHex: z.string().optional(),
+      count: z
+        .number()
+        .int()
+        .openapi({
+          description:
+            'Computed as if this group\u2019s own filter were absent, so a value the shopper ' +
+            'has not ticked shows what ticking it as well would return. A declared value ' +
+            'that currently matches nothing is 0 rather than missing.',
+        }),
+      selected: z.boolean(),
+    })
+    .openapi('FacetValue'),
+);
+
+const facetSchema = registry.register(
+  'Facet',
+  z
+    .object({
+      key: z.string().openapi({ example: 'roast' }),
+      label: z.string(),
+      type: z.enum(ATTRIBUTE_TYPES),
+      filterUi: z.enum(FILTER_UIS),
+      unit: z.string().optional(),
+      range: z
+        .object({ min: z.number(), max: z.number() })
+        .nullable()
+        .openapi({
+          description:
+            'Bounds for a range control, of what is available rather than of what is ' +
+            'selected \u2014 so a slider can always be widened again. Null for value facets.',
+        }),
+      values: z.array(facetValueSchema),
+    })
+    .openapi('Facet'),
+);
+
+const listingCardSchema = registry.register(
+  'ListingCard',
+  z
+    .object({
+      id: z.string(),
+      title: z.string(),
+      slug: z.string(),
+      subtitle: z.string().optional(),
+      priceRange: z
+        .object({ min: z.number().int(), max: z.number().int(), currency: z.string() })
+        .nullable(),
+      inStock: z.boolean(),
+      image: z
+        .object({
+          publicId: z.string(),
+          alt: z.string(),
+          width: z.number().int().optional(),
+          height: z.number().int().optional(),
+          blurDataUrl: z.string().optional(),
+        })
+        .nullable(),
+      ratingAverage: z.number(),
+      ratingCount: z.number().int(),
+    })
+    .openapi('ListingCard'),
+);
+
 registry.registerPath({
   method: 'get',
   path: '/api/catalog/products',
   tags: ['Catalogue'],
-  summary: 'Degraded product listing. Meilisearch serves this on the storefront.',
+  summary: 'The storefront listing: search, filters, sorting and facet counts.',
   description:
-    'Keyset pagination, never .skip(n). Page size defaults to 24 and is capped at 60. ' +
-    'Returns `page.degraded: true` so a caller can tell this apart from the search path.',
+    'Served by Meilisearch, with a MongoDB fallback behind the same URL. `page.degraded` ' +
+    'says which answered: when it is true, `facets` is null and attribute filters were ' +
+    'not applied \u2014 each one comes back in `ignoredFilters` with a reason.\n\n' +
+    '**Any parameter not listed here is treated as an attribute filter**, matched against ' +
+    "the category's own AttributeDefinitions. That is how a filter an admin defined this " +
+    'morning works without a deploy: `?roast=medium,dark&weight_g=250-1000`. Values within ' +
+    'one attribute are OR\u2019d; different attributes are AND\u2019d. An unrecognised key or ' +
+    'value is reported in `ignoredFilters` rather than rejected, so a bookmark outlives the ' +
+    'attribute it names.\n\n' +
+    'Page size defaults to 24 and is capped at 60; depth is capped at 1000 documents.',
   request: {
     query: z.object({
-      category: z.string().optional(),
-      cursor: z.string().optional(),
+      q: z.string().optional().openapi({ description: 'Full-text query.' }),
+      category: z.string().optional().openapi({ example: 'coffee-tea/beans' }),
+      page: z.number().int().min(1).optional(),
       per_page: z.number().int().min(1).max(60).optional(),
-      sort: z.enum(['newest', 'price_asc', 'price_desc']).optional(),
+      sort: z
+        .enum(['relevance', 'newest', 'oldest', 'price_asc', 'price_desc', 'rating'])
+        .optional()
+        .openapi({
+          description:
+            'A whitelisted enum, never a raw sort expression. Defaults to relevance with ' +
+            'a query and newest without one.',
+        }),
+      price: z.string().optional().openapi({ example: '1500-4000', description: 'Minor units.' }),
       in_stock: z.boolean().optional(),
     }),
   },
   responses: {
     200: json(
       z.object({
-        data: z.array(productCardSchema),
+        data: z.array(listingCardSchema),
         page: z.object({
+          page: z.number().int(),
           perPage: z.number().int(),
-          hasMore: z.boolean(),
-          nextCursor: z.string().nullable(),
+          total: z.number().int(),
+          totalPages: z.number().int(),
           degraded: z.boolean(),
         }),
+        facets: z.array(facetSchema).nullable(),
+        ignoredFilters: z.array(z.object({ key: z.string(), reason: z.string() })),
       }),
-      'A page of product cards.',
+      'A page of product cards with the generated facet panel.',
     ),
     400: errors[400],
+    404: errors[404],
   },
 });
 

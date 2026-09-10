@@ -6,6 +6,7 @@ import { AttributeDefinition } from './attribute-definition.model.js';
 import { Category, type CategoryDoc } from './category.model.js';
 import { Product } from './product.model.js';
 import { bumpTreeVersion } from './catalog-versions.js';
+import { appendOutbox } from '../../search/outbox.model.js';
 import type {
   BindAttributeInput,
   CreateCategoryInput,
@@ -144,6 +145,16 @@ export async function updateCategory(id: string, input: UpdateCategoryInput): Pr
       category.path = nextPath;
       await category.save({ session });
       await recomputeSubtree(category, session);
+      // One row for the whole branch. Every product beneath this node just had its
+      // denormalised `categoryAncestors` rewritten, so every one of their index
+      // documents is stale — but a row per product would add an unbounded number of
+      // inserts to a transaction that is already rewriting them all, and a transaction
+      // that large exceeds its lifetime limit and rolls the rename back.
+      await appendOutbox(session, {
+        kind: 'category-branch',
+        entityId: String(category._id),
+        op: 'upsert',
+      });
     });
   } finally {
     await session.endSession();
@@ -181,6 +192,11 @@ export async function moveCategory(id: string, parentId: string | null): Promise
       category.ancestors = parent ? [...parent.ancestors, category._id] : [category._id];
       await category.save({ session });
       await recomputeSubtree(category, session);
+      await appendOutbox(session, {
+        kind: 'category-branch',
+        entityId: String(category._id),
+        op: 'upsert',
+      });
     });
   } finally {
     await session.endSession();

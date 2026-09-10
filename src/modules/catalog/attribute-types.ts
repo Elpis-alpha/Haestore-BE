@@ -92,3 +92,37 @@ export const VALUE_FIELD: Record<AttributeType, string> = {
 /** Variant limits. */
 export const VARIANT_WARN_THRESHOLD = 24;
 export const VARIANT_HARD_LIMIT = 100;
+
+/**
+ * Which types can back a storefront filter.
+ *
+ * `isFilterable` on a definition is the admin's *intent*; this is whether the intent is
+ * satisfiable. Both excluded types fail for the same underlying reason — no finite,
+ * comparable value set — but they fail differently enough to be worth naming:
+ *
+ * `text` is free-form, so a checkbox group over it would list one value per product and
+ * a range over it means nothing. `dimension` is three numbers and a unit, which has no
+ * single ordering to range over and no equality that a shopper would recognise
+ * (20×10×5 and 10×20×5 are the same box).
+ *
+ * This guard is applied in two places that must agree: the Meilisearch
+ * `filterableAttributes` derivation and the generated filter panel. If only the panel
+ * applied it, an admin could publish a filter the index refuses to answer; if only the
+ * settings applied it, the panel would render a control whose every click 400s.
+ */
+export const FILTERABLE_TYPES = new Set<AttributeType>([
+  'select',
+  'multiselect',
+  'color',
+  'number',
+  'boolean',
+]);
+
+export function isFilterableType(type: AttributeType): boolean {
+  return FILTERABLE_TYPES.has(type);
+}
+
+/** Types whose filter is a numeric range rather than a set of discrete values. */
+export function isRangeType(type: AttributeType): boolean {
+  return type === 'number';
+}

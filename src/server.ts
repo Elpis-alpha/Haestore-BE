@@ -5,16 +5,46 @@ import { logger } from './lib/logger.js';
 import { connectMongo, disconnectMongo } from './db/mongo.js';
 import { connectRedis, disconnectRedis } from './cache/redis.js';
 import { connectMeili } from './search/meili.js';
+import { ensureProductsIndex, handleSearchJob } from './search/indexer.js';
+import { startSearchWorker, stopSearchWorker, enqueueSettingsSync } from './search/queue.js';
+import { startOutboxRelay, stopOutboxRelay } from './search/relay.js';
+import { startReconciliation, stopReconciliation } from './search/reconcile.js';
 
 async function main(): Promise<void> {
   // Connect before listening, so the process never accepts traffic it cannot serve.
   await connectMongo();
   await connectRedis();
-  await connectMeili().catch((err: Error) => {
-    // Search is a derived store: the catalogue is still readable from Mongo without
-    // it, so a cold Meilisearch degrades the shop rather than preventing boot.
-    logger.warn({ err: err.message }, 'meilisearch: unavailable at startup, continuing degraded');
-  });
+  const searchUp = await connectMeili()
+    .then(() => true)
+    .catch((err: Error) => {
+      // Search is a derived store: the catalogue is still readable from Mongo without
+      // it, so a cold Meilisearch degrades the shop rather than preventing boot.
+      logger.warn({ err: err.message }, 'meilisearch: unavailable at startup, continuing degraded');
+      return false;
+    });
+
+  if (searchUp) {
+    // The index and its derived settings are established on every boot rather than by a
+    // migration someone has to remember. Both are idempotent: Meilisearch does nothing
+    // when the submitted settings already match, which is why buildSearchSettings emits
+    // a stable ordering.
+    await ensureProductsIndex().catch((err: Error) =>
+      logger.error({ err: err.message }, 'search: could not ensure the index exists'),
+    );
+    await enqueueSettingsSync({ immediate: true }).catch((err: Error) =>
+      logger.error({ err: err.message }, 'search: could not enqueue the boot settings sync'),
+    );
+  }
+
+  // These start regardless of whether Meilisearch answered just now. The outbox keeps
+  // accumulating while search is down, and the relay plus the queue's retries are what
+  // drain it when search comes back — refusing to start them would turn a brief search
+  // outage into a permanently stale index.
+  startSearchWorker(handleSearchJob);
+  await startOutboxRelay().catch((err: Error) =>
+    logger.error({ err: err.message }, 'search: outbox relay failed to start'),
+  );
+  startReconciliation();
 
   const server = createServer(createApp());
 
@@ -45,6 +75,10 @@ async function main(): Promise<void> {
         server.close(() => resolve());
         server.closeIdleConnections();
       });
+      // Search first: the relay holds a change stream and the worker holds jobs, and
+      // both need Mongo and Redis alive to shut down cleanly.
+      stopReconciliation();
+      await Promise.allSettled([stopOutboxRelay(), stopSearchWorker()]);
       await Promise.allSettled([disconnectMongo(), disconnectRedis()]);
 
       clearTimeout(forced);

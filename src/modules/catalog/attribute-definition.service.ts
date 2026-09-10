@@ -1,7 +1,9 @@
+import mongoose from 'mongoose';
 import { badRequest, conflict, notFound } from '../../lib/errors.js';
 import { canBeVariantAxis, hasOptions, type AttributeType } from './attribute-types.js';
 import { AttributeDefinition, type AttributeDefinitionDoc } from './attribute-definition.model.js';
 import { bumpDefsVersion } from './catalog-versions.js';
+import { appendOutbox, type OutboxEntry } from '../../search/outbox.model.js';
 import type {
   CreateAttributeDefinitionInput,
   UpdateAttributeDefinitionInput,
@@ -36,6 +38,41 @@ function assertCoherent(
   }
 }
 
+/**
+ * Runs a definition write and records what search has to do about it, atomically.
+ *
+ * A definition write reaches the index in two different ways and both matter. The
+ * *settings* change, because `filterableAttributes` is derived from these documents —
+ * a new filterable attribute that never reaches the index is a filter the panel offers
+ * and the search server rejects. And in the case of an edit, the denormalised
+ * `displayValue` on every product carrying the key becomes stale, which is what the
+ * backfill job repairs.
+ *
+ * Both intents are appended in the same transaction as the definition itself, for the
+ * same reason product writes are: an enqueue after the save has a crash window, and a
+ * crash in that window leaves the shop's filter panel permanently disagreeing with its
+ * search index.
+ */
+async function inDefinitionTransaction<T>(
+  work: (session: mongoose.ClientSession) => Promise<T>,
+  entries: OutboxEntry[],
+): Promise<T> {
+  const session = await mongoose.startSession();
+  try {
+    let result: T | undefined;
+    let assigned = false;
+    await session.withTransaction(async () => {
+      result = await work(session);
+      assigned = true;
+      await appendOutbox(session, entries);
+    });
+    if (!assigned) throw new Error('definition write transaction produced no result');
+    return result as T;
+  } finally {
+    await session.endSession();
+  }
+}
+
 export async function createAttributeDefinition(
   input: CreateAttributeDefinitionInput,
 ): Promise<AttributeDefinitionDoc> {
@@ -49,7 +86,17 @@ export async function createAttributeDefinition(
     );
   }
 
-  const created = await AttributeDefinition.create(input);
+  const created = await inDefinitionTransaction(
+    async (session) => {
+      const [doc] = await AttributeDefinition.create([input], { session });
+      if (!doc) throw new Error('attribute definition create returned nothing');
+      return doc;
+    },
+    // A brand-new definition has no products carrying it, so there is nothing to
+    // backfill — only the index settings need to learn the new filterable attribute.
+    [{ kind: 'settings', op: 'sync' }],
+  );
+
   await bumpDefsVersion();
   return created;
 }
@@ -70,7 +117,20 @@ export async function updateAttributeDefinition(
   // stored, unrenderable, and unmatched by any filter. Archiving the whole definition
   // is the supported way to retire something.
   definition.set(input);
-  await definition.save();
+
+  await inDefinitionTransaction(
+    async (session) => {
+      await definition.save({ session });
+      return definition;
+    },
+    [
+      { kind: 'settings', op: 'sync' },
+      // An edit can change option labels, and those are denormalised onto every product
+      // holding this key. The backfill re-renders them and reindexes what it touched.
+      { kind: 'attribute-definition', entityId: String(definition._id), op: 'upsert' },
+    ],
+  );
+
   await bumpDefsVersion();
   return definition;
 }
@@ -88,7 +148,17 @@ export async function archiveAttributeDefinition(id: string): Promise<AttributeD
   if (!definition) throw notFound('Attribute not found.');
 
   definition.archivedAt = new Date();
-  await definition.save();
+
+  // Settings only: archiving retires the filter but leaves every stored value and its
+  // rendered label exactly as it was, which is the whole point of archiving.
+  await inDefinitionTransaction(
+    async (session) => {
+      await definition.save({ session });
+      return definition;
+    },
+    [{ kind: 'settings', op: 'sync' }],
+  );
+
   await bumpDefsVersion();
   return definition;
 }
@@ -98,7 +168,15 @@ export async function restoreAttributeDefinition(id: string): Promise<AttributeD
   if (!definition) throw notFound('Attribute not found.');
 
   definition.archivedAt = undefined;
-  await definition.save();
+
+  await inDefinitionTransaction(
+    async (session) => {
+      await definition.save({ session });
+      return definition;
+    },
+    [{ kind: 'settings', op: 'sync' }],
+  );
+
   await bumpDefsVersion();
   return definition;
 }

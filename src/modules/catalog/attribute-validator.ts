@@ -171,7 +171,15 @@ export function clearValidatorCache(): void {
 }
 
 /** How a stored value is rendered, computed once at write time. */
-function toDisplayValue(attribute: EffectiveAttribute, value: unknown): string {
+/**
+ * Renders a stored value for display.
+ *
+ * Exported because the definition backfill re-renders exactly this when an admin edits
+ * an option's label: `displayValue` is denormalised onto every product, so a second
+ * implementation of this rendering would drift from the first and produce two different
+ * spellings of the same attribute across the catalogue.
+ */
+export function toDisplayValue(attribute: EffectiveAttribute, value: unknown): string {
   const labelOf = (v: string) => attribute.options.find((o) => o.value === v)?.label ?? v;
 
   switch (attribute.type) {

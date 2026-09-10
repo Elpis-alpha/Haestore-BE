@@ -614,6 +614,188 @@
             ]
           }
         ]
+      },
+      "FacetValue": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "swatchHex": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer",
+            "description": "Computed as if this group’s own filter were absent, so a value the shopper has not ticked shows what ticking it as well would return. A declared value that currently matches nothing is 0 rather than missing."
+          },
+          "selected": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "value",
+          "label",
+          "count",
+          "selected"
+        ]
+      },
+      "Facet": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "roast"
+          },
+          "label": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "select",
+              "multiselect",
+              "text",
+              "number",
+              "boolean",
+              "color",
+              "dimension"
+            ]
+          },
+          "filterUi": {
+            "type": "string",
+            "enum": [
+              "checkbox",
+              "swatch",
+              "range",
+              "toggle",
+              "select"
+            ]
+          },
+          "unit": {
+            "type": "string"
+          },
+          "range": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "min": {
+                "type": "number"
+              },
+              "max": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "min",
+              "max"
+            ],
+            "description": "Bounds for a range control, of what is available rather than of what is selected — so a slider can always be widened again. Null for value facets."
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FacetValue"
+            }
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "type",
+          "filterUi",
+          "range",
+          "values"
+        ]
+      },
+      "ListingCard": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "subtitle": {
+            "type": "string"
+          },
+          "priceRange": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "min": {
+                "type": "integer"
+              },
+              "max": {
+                "type": "integer"
+              },
+              "currency": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "min",
+              "max",
+              "currency"
+            ]
+          },
+          "inStock": {
+            "type": "boolean"
+          },
+          "image": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "publicId": {
+                "type": "string"
+              },
+              "alt": {
+                "type": "string"
+              },
+              "width": {
+                "type": "integer"
+              },
+              "height": {
+                "type": "integer"
+              },
+              "blurDataUrl": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "publicId",
+              "alt"
+            ]
+          },
+          "ratingAverage": {
+            "type": "number"
+          },
+          "ratingCount": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "slug",
+          "priceRange",
+          "inStock",
+          "image",
+          "ratingAverage",
+          "ratingCount"
+        ]
       }
     },
     "parameters": {},
@@ -755,12 +937,23 @@
         "tags": [
           "Catalogue"
         ],
-        "summary": "Degraded product listing. Meilisearch serves this on the storefront.",
-        "description": "Keyset pagination, never .skip(n). Page size defaults to 24 and is capped at 60. Returns `page.degraded: true` so a caller can tell this apart from the search path.",
+        "summary": "The storefront listing: search, filters, sorting and facet counts.",
+        "description": "Served by Meilisearch, with a MongoDB fallback behind the same URL. `page.degraded` says which answered: when it is true, `facets` is null and attribute filters were not applied — each one comes back in `ignoredFilters` with a reason.\n\n**Any parameter not listed here is treated as an attribute filter**, matched against the category's own AttributeDefinitions. That is how a filter an admin defined this morning works without a deploy: `?roast=medium,dark&weight_g=250-1000`. Values within one attribute are OR’d; different attributes are AND’d. An unrecognised key or value is reported in `ignoredFilters` rather than rejected, so a bookmark outlives the attribute it names.\n\nPage size defaults to 24 and is capped at 60; depth is capped at 1000 documents.",
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "description": "Full-text query."
+            },
+            "required": false,
+            "description": "Full-text query.",
+            "name": "q",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "coffee-tea/beans"
             },
             "required": false,
             "name": "category",
@@ -768,10 +961,11 @@
           },
           {
             "schema": {
-              "type": "string"
+              "type": "integer",
+              "minimum": 1
             },
             "required": false,
-            "name": "cursor",
+            "name": "page",
             "in": "query"
           },
           {
@@ -788,13 +982,29 @@
             "schema": {
               "type": "string",
               "enum": [
+                "relevance",
                 "newest",
+                "oldest",
                 "price_asc",
-                "price_desc"
-              ]
+                "price_desc",
+                "rating"
+              ],
+              "description": "A whitelisted enum, never a raw sort expression. Defaults to relevance with a query and newest without one."
             },
             "required": false,
+            "description": "A whitelisted enum, never a raw sort expression. Defaults to relevance with a query and newest without one.",
             "name": "sort",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "1500-4000",
+              "description": "Minor units."
+            },
+            "required": false,
+            "description": "Minor units.",
+            "name": "price",
             "in": "query"
           },
           {
@@ -808,7 +1018,7 @@
         ],
         "responses": {
           "200": {
-            "description": "A page of product cards.",
+            "description": "A page of product cards with the generated facet panel.",
             "content": {
               "application/json": {
                 "schema": {
@@ -817,39 +1027,69 @@
                     "data": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/ProductCard"
+                        "$ref": "#/components/schemas/ListingCard"
                       }
                     },
                     "page": {
                       "type": "object",
                       "properties": {
+                        "page": {
+                          "type": "integer"
+                        },
                         "perPage": {
                           "type": "integer"
                         },
-                        "hasMore": {
-                          "type": "boolean"
+                        "total": {
+                          "type": "integer"
                         },
-                        "nextCursor": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
+                        "totalPages": {
+                          "type": "integer"
                         },
                         "degraded": {
                           "type": "boolean"
                         }
                       },
                       "required": [
+                        "page",
                         "perPage",
-                        "hasMore",
-                        "nextCursor",
+                        "total",
+                        "totalPages",
                         "degraded"
                       ]
+                    },
+                    "facets": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "$ref": "#/components/schemas/Facet"
+                      }
+                    },
+                    "ignoredFilters": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "reason"
+                        ]
+                      }
                     }
                   },
                   "required": [
                     "data",
-                    "page"
+                    "page",
+                    "facets",
+                    "ignoredFilters"
                   ]
                 }
               }
@@ -857,6 +1097,16 @@
           },
           "400": {
             "description": "The request was malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
             "content": {
               "application/json": {
                 "schema": {

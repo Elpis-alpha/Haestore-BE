@@ -28,10 +28,12 @@ type Filter = {
   options: { value: string }[];
 };
 type CategoryResponse = { data: { category: { path: string }; filters: Filter[] } };
-type Card = { _id: string; title: string; validationIssues?: unknown; needsAttention?: unknown };
+type Card = { id: string; title: string; validationIssues?: unknown; needsAttention?: unknown };
 type ListResponse = {
   data: Card[];
-  page: { perPage: number; hasMore: boolean; nextCursor: string | null; degraded: boolean };
+  page: { page: number; perPage: number; total: number; totalPages: number; degraded: boolean };
+  facets: unknown;
+  ignoredFilters: { key: string; reason: string }[];
 };
 type ErrorResponse = { error: { code: string; message: string } };
 
@@ -160,36 +162,57 @@ describe('every list endpoint is bounded and projected', () => {
     expect(body.data[0]).not.toHaveProperty('needsAttention');
   });
 
-  it('pages by cursor, without repeating or skipping a row', async () => {
+  it('pages without repeating or skipping a row', async () => {
     const { beans } = await shopWithCoffee();
     for (let i = 0; i < 5; i += 1) {
       await makeProduct(String(beans._id), `Bag ${i}`, 1000 + i, 'active');
     }
 
     const first = bodyOf<ListResponse>(
-      await request(app).get('/api/catalog/products?per_page=2').expect(200),
+      await request(app).get('/api/catalog/products?per_page=2&page=1').expect(200),
     );
     expect(first.data).toHaveLength(2);
-    expect(first.page.hasMore).toBe(true);
+    expect(first.page.total).toBe(5);
+    expect(first.page.totalPages).toBe(3);
 
     const second = bodyOf<ListResponse>(
-      await request(app)
-        .get(`/api/catalog/products?per_page=2&cursor=${first.page.nextCursor}`)
-        .expect(200),
+      await request(app).get('/api/catalog/products?per_page=2&page=2').expect(200),
     );
 
-    const firstIds = first.data.map((p) => p._id);
-    expect(second.data.some((p) => firstIds.includes(p._id))).toBe(false);
+    const firstIds = first.data.map((p) => p.id);
+    expect(second.data.some((p) => firstIds.includes(p.id))).toBe(false);
 
-    // Five rows across pages of two: 2, 2, then 1 with no further page.
+    // Five rows across pages of two: 2, 2, then 1.
     const third = bodyOf<ListResponse>(
-      await request(app)
-        .get(`/api/catalog/products?per_page=2&cursor=${second.page.nextCursor}`)
-        .expect(200),
+      await request(app).get('/api/catalog/products?per_page=2&page=3').expect(200),
     );
     expect(third.data).toHaveLength(1);
-    expect(third.page.hasMore).toBe(false);
-    expect(third.page.nextCursor).toBeNull();
+  });
+
+  it('says which engine answered, so the storefront never has to guess', async () => {
+    const { beans } = await shopWithCoffee();
+    await makeProduct(String(beans._id), 'Live bag', 1800, 'active');
+
+    const body = bodyOf<ListResponse>(await request(app).get('/api/catalog/products').expect(200));
+
+    // No index has been built in this suite, so the search path fails and MongoDB
+    // answers. The flag is the contract that lets the panel hide itself rather than
+    // render controls that would not be applied.
+    expect(body.page.degraded).toBe(true);
+    expect(body.facets).toBeNull();
+  });
+
+  it('reports an attribute filter it could not apply rather than ignoring it silently', async () => {
+    const { beans } = await shopWithCoffee();
+    await makeProduct(String(beans._id), 'Live bag', 1800, 'active');
+
+    const body = bodyOf<ListResponse>(
+      await request(app).get('/api/catalog/products?category=shop/beans&roast=dark').expect(200),
+    );
+
+    // Degraded means unfiltered, and a shopper being shown unfiltered results as though
+    // they were filtered is the failure worth avoiding here.
+    expect(body.ignoredFilters.map((f) => f.key)).toContain('roast');
   });
 
   it('filters a whole branch with one predicate against the materialised ancestry', async () => {

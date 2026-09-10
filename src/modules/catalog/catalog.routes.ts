@@ -1,22 +1,33 @@
 import { Router } from 'express';
-import { Types } from 'mongoose';
 import { z } from 'zod';
 import { badRequest, notFound } from '../../lib/errors.js';
-import { param, query, validateQuery } from '../../middleware/validate.js';
+import { param } from '../../middleware/validate.js';
+import { isFilterableType } from './attribute-types.js';
 import { Category } from './category.model.js';
-import { Product } from './product.model.js';
 import { getCategoryByPath } from './category.service.js';
 import { getProductBySlug } from './product.service.js';
-import { resolveEffectiveAttributes } from './effective-attributes.js';
+import {
+  globalFilterableAttributes,
+  resolveEffectiveAttributes,
+  type EffectiveAttribute,
+} from './effective-attributes.js';
+import { parsePriceRange } from '../../search/filter-expression.js';
+import {
+  DEFAULT_PAGE_SIZE,
+  listProducts,
+  MAX_PAGE_SIZE,
+  SORT_KEYS,
+  type SortKey,
+} from '../../search/search.service.js';
 
 export const catalogRouter = Router();
 
 /**
  * The public catalogue.
  *
- * Storefront listing, filtering and faceting move to Meilisearch in Phase 3 (ADR-003);
- * what is here is the product page, the category tree, and a **degraded** listing that
- * keeps the shop open when the search cluster is not.
+ * Listing, filtering, sorting and faceting are served by Meilisearch (ADR-003), with a
+ * MongoDB fallback behind the same URL. Mongo keeps the product page and the category
+ * tree.
  *
  * Two rules apply to every list endpoint, because the 2022 app broke both: a mandatory
  * field projection, and a default and maximum page size. That app's product listing
@@ -24,27 +35,41 @@ export const catalogRouter = Router();
  * stored in the document — for the entire catalogue on one request.
  */
 
-/** Never send drafts, internal validation state, or the full variant array to a card. */
-const CARD_PROJECTION =
-  'title slug subtitle category categoryAncestors priceRange inStock images ratingAverage ratingCount createdAt';
-
-const DEFAULT_PAGE_SIZE = 24;
-const MAX_PAGE_SIZE = 60;
+/**
+ * Parameter names the listing owns.
+ *
+ * Everything *not* in this set is treated as a candidate attribute filter, which is
+ * what lets a filter an admin invented this morning work without a deploy. The set is
+ * kept in step with RESERVED_ATTRIBUTE_KEYS in attribute-types.ts, which refuses these
+ * as attribute keys at definition time — so the collision is impossible by
+ * construction rather than resolved here.
+ */
+const RESERVED_PARAMS = new Set([
+  'q',
+  'category',
+  'sort',
+  'page',
+  'per_page',
+  'price',
+  'in_stock',
+  'view',
+]);
 
 const listQuerySchema = z.object({
+  q: z.string().trim().max(200).optional(),
   category: z.string().trim().toLowerCase().optional(),
   /**
-   * Keyset, not `.skip(n)`. Skip re-reads and discards every preceding document, so
-   * page 40 costs forty pages of work; a cursor costs one index seek at any depth. It
-   * also cannot skip or duplicate a row when the catalogue changes mid-browse.
+   * Page-based, not keyset. Meilisearch paginates by offset and bounds the depth with
+   * `maxTotalHits`, so a cursor would have to be emulated on top of an offset anyway.
+   * The Mongo fallback honours the same bound, which is what keeps the two engines
+   * agreeing about which pages exist.
    */
-  cursor: z.string().optional(),
+  page: z.coerce.number().int().min(1).max(1000).default(1),
   per_page: z.coerce.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE),
-  sort: z.enum(['newest', 'price_asc', 'price_desc']).default('newest'),
+  sort: z.enum(SORT_KEYS as [SortKey, ...SortKey[]]).optional(),
+  price: z.string().optional(),
   in_stock: z.coerce.boolean().optional(),
 });
-
-type ListQuery = z.infer<typeof listQuerySchema>;
 
 catalogRouter.get('/categories', async (_req, res) => {
   const categories = await Category.find({ status: 'active' })
@@ -81,9 +106,11 @@ catalogRouter.get('/categories/by-path/*path', async (req, res) => {
         description: category.description,
         ancestors: category.ancestors.map(String),
       },
-      // Only the filterable subset, and only what the panel needs to render.
+      // Filterable in intent *and* satisfiable in type. The same guard derives
+      // Meilisearch's filterableAttributes, so the panel can never offer a control the
+      // index has no way to answer.
       filters: set.attributes
-        .filter((a) => a.isFilterable)
+        .filter((a) => a.isFilterable && isFilterableType(a.type))
         .map((a) => ({
           key: a.key,
           label: a.label,
@@ -96,53 +123,69 @@ catalogRouter.get('/categories/by-path/*path', async (req, res) => {
   });
 });
 
-catalogRouter.get('/products', validateQuery(listQuerySchema), async (req, res) => {
-  const q = query<ListQuery>(req);
+/**
+ * The storefront listing.
+ *
+ * Every parameter that is not reserved is offered to the filter builder as a candidate
+ * attribute filter, which is the mechanism the whole rebuild is named for: an admin
+ * defines "Roast" this morning and `?roast=dark` works this afternoon, with no code
+ * here naming it.
+ *
+ * Nothing from the query string reaches Meilisearch's filter DSL without first being
+ * matched against the category's own attribute definitions — see
+ * search/filter-expression.ts, which is where that boundary is enforced and tested.
+ */
+catalogRouter.get('/products', async (req, res) => {
+  const parsed = listQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    throw badRequest('One or more query parameters are not valid.', {
+      issues: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+    });
+  }
+  const q = parsed.data;
 
-  const filter: Record<string, unknown> = { status: 'active' };
+  let categoryId: string | null = null;
+  let attributes: EffectiveAttribute[];
 
   if (q.category) {
-    const category = await Category.findOne({ path: q.category }).select('_id').lean();
+    const category = await Category.findOne({ path: q.category, status: 'active' })
+      .select('_id')
+      .lean();
     if (!category) throw notFound('Category not found.');
-    // One equality predicate against the materialised ancestry covers the whole branch.
-    filter.categoryAncestors = category._id;
-  }
-  if (q.in_stock) filter.inStock = true;
-
-  // Every sort ends in _id so the key is total; without that tiebreak two documents
-  // with the same price have an unstable order and a cursor can skip or repeat one.
-  const sorts = {
-    newest: { createdAt: -1, _id: -1 },
-    price_asc: { 'priceRange.min': 1, _id: 1 },
-    price_desc: { 'priceRange.min': -1, _id: -1 },
-  } as const;
-  const sort = sorts[q.sort];
-
-  if (q.cursor) {
-    if (!Types.ObjectId.isValid(q.cursor)) throw badRequest('That cursor is not valid.');
-    const direction = q.sort === 'price_asc' ? '$gt' : '$lt';
-    filter._id = { [direction]: new Types.ObjectId(q.cursor) };
+    categoryId = String(category._id);
+    attributes = (await resolveEffectiveAttributes(categoryId)).attributes;
+  } else {
+    // An unscoped listing still gets a panel: the union of every live filterable
+    // definition, which is exactly what any product in the shop could be filtered by.
+    attributes = await globalFilterableAttributes();
   }
 
-  // One extra row answers "is there a next page" without a second count query.
-  const rows = await Product.find(filter)
-    .select(CARD_PROJECTION)
-    .sort(sort)
-    .limit(q.per_page + 1)
-    .lean();
+  // Anything the listing does not own is a candidate attribute filter. Unknown keys are
+  // reported back rather than rejected, so a bookmark that outlived its attribute keeps
+  // working and says what it lost.
+  const attributeParams: Record<string, string | string[] | undefined> = {};
+  for (const [key, value] of Object.entries(req.query)) {
+    if (RESERVED_PARAMS.has(key)) continue;
+    if (typeof value === 'string' || Array.isArray(value)) {
+      attributeParams[key] = value as string | string[];
+    }
+  }
 
-  const hasMore = rows.length > q.per_page;
-  const data = hasMore ? rows.slice(0, q.per_page) : rows;
-
-  res.json({
-    data,
-    page: {
-      perPage: q.per_page,
-      hasMore,
-      nextCursor: hasMore ? String(data[data.length - 1]?._id) : null,
-      degraded: true,
-    },
+  const result = await listProducts({
+    ...(q.q ? { q: q.q } : {}),
+    categoryId,
+    attributes,
+    attributeParams,
+    price: parsePriceRange(q.price),
+    ...(q.in_stock ? { inStock: true } : {}),
+    // Relevance is only meaningful with a query, so an unsearched listing defaults to
+    // newest rather than to Meilisearch's internal ordering, which would look arbitrary.
+    sort: q.sort ?? (q.q ? 'relevance' : 'newest'),
+    page: q.page,
+    perPage: q.per_page,
   });
+
+  res.json(result);
 });
 
 catalogRouter.get('/products/:slug', async (req, res) => {

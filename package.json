@@ -23,10 +23,13 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "check:all": "npm run check && npm run test:integration",
     "openapi:generate": "tsx src/openapi/generate.ts",
-    "openapi:check": "npm run openapi:generate && git diff --exit-code openapi.json"
+    "openapi:check": "npm run openapi:generate && git diff --exit-code openapi.json",
+    "search:reindex": "tsx src/search/reindex.cli.ts",
+    "search:reconcile": "tsx src/search/reconcile.cli.ts"
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^9.1.0",
+    "bullmq": "^6.3.4",
     "compression": "^1.7.5",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",

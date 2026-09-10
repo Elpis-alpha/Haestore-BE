@@ -21,6 +21,16 @@ process.env.GUEST_COOKIE_SECRET ??= 'integration_guest_secret_long_enough_for_sc
 process.env.ALLOWED_ORIGINS ??= 'http://localhost:3000';
 // Database 15, so a run can never disturb the development cache on database 0.
 process.env.REDIS_URL = process.env.REDIS_TEST_URL ?? 'redis://127.0.0.1:6380/15';
+// The same idea for the search server, which unlike Mongo is a real shared instance
+// during a test run: every index this suite touches is prefixed, so a reindex here can
+// never swap away the catalogue in a development window.
+process.env.MEILISEARCH_HOST = process.env.MEILISEARCH_TEST_HOST ?? 'http://127.0.0.1:7700';
+process.env.MEILISEARCH_API_KEY ??= 'haestore_dev_master_key_change_me';
+process.env.MEILISEARCH_INDEX_PREFIX = 'test_';
+// The relay, the worker and the reconciliation loop are started explicitly by the tests
+// that exercise them; a background worker draining the outbox mid-assertion would make
+// every other test timing-dependent.
+process.env.SEARCH_INDEXING_ENABLED = 'false';
 
 let replSet: MongoMemoryReplSet;
 

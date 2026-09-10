@@ -11,9 +11,9 @@ import { logger } from '../lib/logger.js';
  * so nothing here is a source of truth.
  */
 
-export const PRODUCTS_INDEX = 'products';
+export const PRODUCTS_INDEX = `${env.MEILISEARCH_INDEX_PREFIX}products`;
 /** Reindexing builds here and then atomically swaps, so readers never see a half-built index. */
-export const PRODUCTS_REBUILD_INDEX = 'products_rebuild';
+export const PRODUCTS_REBUILD_INDEX = `${env.MEILISEARCH_INDEX_PREFIX}products_rebuild`;
 
 export const meili = new MeiliSearch({
   host: env.MEILISEARCH_HOST,

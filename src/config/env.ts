@@ -44,6 +44,25 @@ const envSchema = z.object({
   REDIS_URL: z.string().min(1, 'REDIS_URL is required'),
   MEILISEARCH_HOST: z.url().default('http://127.0.0.1:7700'),
   MEILISEARCH_API_KEY: z.string().min(1).optional(),
+  // Prefixes every index name. Empty in development and production; the integration
+  // suite sets it so a test run against a real Meilisearch cannot swap away the
+  // catalogue someone is looking at in another window.
+  MEILISEARCH_INDEX_PREFIX: z.string().default(''),
+
+  // ---- Search indexing --------------------------------------------------
+  // The outbox relay and the BullMQ worker run inside the API process, which is
+  // right for a single-container deployment and wrong for several. Both are
+  // switchable so a second replica can serve traffic without racing the first to
+  // drain the outbox — the relay additionally holds a Redis lease, so leaving this
+  // on everywhere is safe, just wasteful.
+  SEARCH_INDEXING_ENABLED: z
+    .stringbool()
+    .default(true)
+    .describe('Run the outbox relay and the index worker in this process.'),
+  // Six admin saves in a minute must produce one re-index, not six: a settings job is
+  // enqueued with this delay under a fixed job id, so re-enqueuing while one is
+  // already waiting is a no-op. See ADR-003 and docs/SEARCH.md.
+  SEARCH_SETTINGS_DEBOUNCE_MS: z.coerce.number().int().min(0).default(30_000),
 
   // ---- Auth --------------------------------------------------------------
   // Server-side pepper for OTP hashing. Never stored in Redis, which is what makes a

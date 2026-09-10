@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { badRequest, notFound } from '../../lib/errors.js';
 import { uniqueSlug } from '../../lib/slug.js';
 import { Category } from './category.model.js';
@@ -10,6 +11,7 @@ import {
   type ValidationIssue,
 } from './attribute-validator.js';
 import { buildSku, summariseVariants } from './variants.js';
+import { appendOutbox } from '../../search/outbox.model.js';
 import type { CreateProductInput, UpdateProductInput, VariantInput } from './product.schema.js';
 
 /**
@@ -21,6 +23,12 @@ import type { CreateProductInput, UpdateProductInput, VariantInput } from './pro
  * Nothing skips a step. A product that took a shortcut is a product whose attributes
  * do not match its category, and the whole adaptable design rests on that never being
  * true.
+ *
+ * **Every write is a transaction, and every transaction appends to the search outbox.**
+ * The transaction is not there for the product document — a single document write is
+ * already atomic — it is there so the row that says "reindex this" commits with it or
+ * not at all. Enqueuing after the save instead would leave a window in which a crash
+ * produces a product that exists and is unfindable. See search/outbox.model.ts.
  */
 
 async function loadSet(categoryId: string): Promise<{
@@ -173,27 +181,39 @@ export async function createProduct(input: CreateProductInput): Promise<ProductD
     return (await Product.countDocuments({ slug: candidate })) > 0;
   });
 
-  const product = await Product.create({
-    title: input.title,
-    slug,
-    subtitle: input.subtitle,
-    description: input.description,
-    category: category._id,
-    categoryAncestors: category.ancestors,
-    status: input.status,
-    attributes: built.attributes,
-    variantAxes: input.variantAxes,
-    variants: built.variants,
-    images: input.images,
-    priceRange: built.summary.priceRange ?? undefined,
-    inStock: built.summary.inStock,
-    needsAttention: built.issues.length > 0,
-    validationIssues: built.issues,
-    publishedAt: input.status === 'active' ? new Date() : undefined,
-  });
+  return inWriteTransaction(async (session) => {
+    // The array form, because that is the only overload of `create` that accepts a
+    // session — the single-document form silently ignores it and writes outside the
+    // transaction.
+    const [product] = await Product.create(
+      [
+        {
+          title: input.title,
+          slug,
+          subtitle: input.subtitle,
+          description: input.description,
+          category: category._id,
+          categoryAncestors: category.ancestors,
+          status: input.status,
+          attributes: built.attributes,
+          variantAxes: input.variantAxes,
+          variants: built.variants,
+          images: input.images,
+          priceRange: built.summary.priceRange ?? undefined,
+          inStock: built.summary.inStock,
+          needsAttention: built.issues.length > 0,
+          validationIssues: built.issues,
+          publishedAt: input.status === 'active' ? new Date() : undefined,
+        },
+      ],
+      { session },
+    );
+    if (!product) throw new Error('product create returned nothing');
 
-  await setDefaultVariant(product);
-  return product;
+    applyDefaultVariant(product);
+    await product.save({ session });
+    return product;
+  });
 }
 
 export async function updateProduct(id: string, input: UpdateProductInput): Promise<ProductDoc> {
@@ -260,10 +280,12 @@ export async function updateProduct(id: string, input: UpdateProductInput): Prom
   product.inStock = built.summary.inStock;
   product.needsAttention = built.issues.length > 0;
   product.set('validationIssues', built.issues);
+  applyDefaultVariant(product);
 
-  await product.save();
-  await setDefaultVariant(product);
-  return product;
+  return inWriteTransaction(async (session) => {
+    await product.save({ session });
+    return product;
+  });
 }
 
 /** Reverses the projection, so an update that omits `attributes` keeps what is stored. */
@@ -323,12 +345,22 @@ export async function recategoriseProduct(id: string, categoryId: string): Promi
   product.needsAttention = issues.length > 0;
   product.set('validationIssues', issues);
 
-  await product.save();
-  return product;
+  return inWriteTransaction(async (session) => {
+    await product.save({ session });
+    return product;
+  });
 }
 
-/** The variant a bare product URL selects. Lowest-positioned active variant, else the first. */
-async function setDefaultVariant(product: ProductDoc): Promise<void> {
+/**
+ * The variant a bare product URL selects. Lowest-positioned active variant, else the
+ * first.
+ *
+ * Mutates in memory and does not save. It used to save on its own, which meant every
+ * create was two writes and the second one sat outside whatever transaction the first
+ * belonged to — so the outbox row could commit against a product whose default variant
+ * had not been chosen yet.
+ */
+function applyDefaultVariant(product: ProductDoc): void {
   const active = product.variants.filter((v) => v.status === 'active');
   const chosen = [...(active.length > 0 ? active : product.variants)].sort(
     (a, b) => a.position - b.position,
@@ -336,9 +368,38 @@ async function setDefaultVariant(product: ProductDoc): Promise<void> {
 
   const next = chosen?._id;
   if (String(product.defaultVariantId ?? '') === String(next ?? '')) return;
-
   product.defaultVariantId = next;
-  await product.save();
+}
+
+/**
+ * Runs a product write inside a transaction and records the reindex intent with it.
+ *
+ * Every mutating export goes through here, so there is exactly one place where the
+ * pairing of "the product changed" and "the index must be told" is expressed — and no
+ * way to add a new write that forgets the second half.
+ */
+async function inWriteTransaction<T extends { _id: unknown }>(
+  work: (session: mongoose.ClientSession) => Promise<T>,
+  op: 'upsert' | 'delete' = 'upsert',
+): Promise<T> {
+  const session = await mongoose.startSession();
+  try {
+    let result: T | undefined;
+    await session.withTransaction(async () => {
+      result = await work(session);
+      await appendOutbox(session, {
+        kind: 'product',
+        entityId: String(result._id),
+        op,
+      });
+    });
+    // `withTransaction` either commits or throws, so this is unreachable unless the
+    // callback returned without assigning — which would be a bug worth failing on.
+    if (!result) throw new Error('product write transaction produced no document');
+    return result;
+  } finally {
+    await session.endSession();
+  }
 }
 
 export async function getProductBySlug(slug: string) {
@@ -353,5 +414,12 @@ export async function deleteProduct(id: string): Promise<void> {
   // Archive rather than delete: orders snapshot their lines, but reviews, wishlists and
   // the search index all reference the product by id.
   product.status = 'archived';
-  await product.save();
+
+  // `delete` rather than `upsert`, although the worker would reach the same conclusion
+  // from the archived status. Saying it plainly means an operator reading the outbox
+  // can see a removal as a removal.
+  await inWriteTransaction(async (session) => {
+    await product.save({ session });
+    return product;
+  }, 'delete');
 }

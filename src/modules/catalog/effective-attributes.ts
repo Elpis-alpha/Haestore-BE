@@ -194,3 +194,58 @@ async function computeEffectiveAttributes(categoryId: string): Promise<Effective
     attributes,
   };
 }
+
+/**
+ * The attribute set for a listing that is not scoped to a category.
+ *
+ * "All products" has no ancestry to resolve, so there is no effective set — but the
+ * shopper still expects a filter panel. The union of every live filterable definition is
+ * the honest answer: it is exactly the set of things any product in the shop could be
+ * filtered by, and Meilisearch returns a zero count for any value nothing currently has.
+ *
+ * Binding metadata is filled in with neutral values because none of it applies here:
+ * nothing is required by a category that was not named, and nothing was inherited from
+ * an ancestor that does not exist.
+ */
+export async function globalFilterableAttributes(): Promise<EffectiveAttribute[]> {
+  const defs = await AttributeDefinition.find({
+    isFilterable: true,
+    archivedAt: { $exists: false },
+  })
+    .sort({ label: 1 })
+    .lean();
+
+  return defs.map((def, index) => {
+    const options = (def.options ?? [])
+      .map((o) => ({
+        value: o.value,
+        label: o.label,
+        ...(o.swatchHex ? { swatchHex: o.swatchHex } : {}),
+        order: o.order,
+      }))
+      .sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
+
+    return {
+      key: def.key,
+      defId: String(def._id),
+      label: def.label,
+      ...(def.description ? { description: def.description } : {}),
+      type: def.type,
+      ...(def.unit ? { unit: def.unit } : {}),
+      options,
+      isFilterable: def.isFilterable,
+      isSearchable: def.isSearchable,
+      isAxisEligible: def.isVariantAxis && canBeVariantAxis(def.type, options.length),
+      filterUi: def.filterUi,
+      validation: {
+        ...(def.validation?.min != null ? { min: def.validation.min } : {}),
+        ...(def.validation?.max != null ? { max: def.validation.max } : {}),
+        ...(def.validation?.step != null ? { step: def.validation.step } : {}),
+        ...(def.validation?.maxLength != null ? { maxLength: def.validation.maxLength } : {}),
+      },
+      required: false,
+      order: index,
+      inheritedFrom: null,
+    } satisfies EffectiveAttribute;
+  });
+}
