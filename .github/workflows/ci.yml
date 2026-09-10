@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+
+      meilisearch:
+        image: getmeili/meilisearch:v1.11
+        ports: ['7700:7700']
+        env:
+          MEILI_MASTER_KEY: ci_master_key
+          MEILI_NO_ANALYTICS: 'true'
+
+    env:
+      NODE_ENV: test
+      # Integration tests start their own in-process replica set via
+      # mongodb-memory-server. A GitHub Actions `services:` container cannot easily
+      # run `--replSet` plus rs.initiate(), and this design requires a replica set.
+      MONGODB_URL: mongodb://127.0.0.1:27017/haestore_ci?directConnection=true
+      REDIS_URL: redis://127.0.0.1:6379
+      MEILISEARCH_HOST: http://127.0.0.1:7700
+      MEILISEARCH_API_KEY: ci_master_key
+      OTP_PEPPER: ci_pepper_that_is_definitely_long_enough_for_the_schema
+      GUEST_COOKIE_SECRET: ci_guest_secret_that_is_long_enough_for_the_schema
+      ALLOWED_ORIGINS: http://localhost:3000
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Format
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
