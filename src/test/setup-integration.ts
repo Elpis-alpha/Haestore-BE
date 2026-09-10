@@ -19,6 +19,10 @@ process.env.NODE_ENV = 'test';
 process.env.OTP_PEPPER ??= 'integration_pepper_long_enough_for_the_schema_check';
 process.env.GUEST_COOKIE_SECRET ??= 'integration_guest_secret_long_enough_for_schema';
 process.env.ALLOWED_ORIGINS ??= 'http://localhost:3000';
+// The admin bootstrap allowlist. One address, so the suite can assert both sides of it:
+// this one reaches the admin surface and every other signed-in address gets a 404.
+process.env.ADMIN_EMAILS = 'keeper@haestore.test';
+process.env.MAIL_DRIVER = 'console';
 // Database 15, so a run can never disturb the development cache on database 0.
 process.env.REDIS_URL = process.env.REDIS_TEST_URL ?? 'redis://127.0.0.1:6380/15';
 // The same idea for the search server, which unlike Mongo is a real shared instance

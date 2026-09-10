@@ -18,6 +18,11 @@ import {
   updateProductSchema,
 } from '../modules/catalog/product.schema.js';
 import { ATTRIBUTE_TYPES, FILTER_UIS } from '../modules/catalog/attribute-types.js';
+import {
+  requestCodeSchema,
+  updateProfileSchema,
+  verifyCodeSchema,
+} from '../modules/auth/auth.schema.js';
 
 /**
  * The contract between the two repos.
@@ -248,6 +253,188 @@ const errors = {
   409: json(errorSchema, 'Conflicts with something that already exists.'),
   422: json(errorSchema, 'The body failed validation.'),
 };
+
+/* -------------------------------------------------------------------- auth -- */
+
+const userSchema = registry.register(
+  'User',
+  z
+    .object({
+      id: z.string(),
+      email: z.string(),
+      name: z.string().optional(),
+      roles: z.array(z.string()),
+      createdAt: z.string(),
+    })
+    .openapi({
+      description:
+        'There is no password field, and there never will be. Authentication is a code ' +
+        'mailed to the address; see ADR-004.',
+    })
+    .openapi('User'),
+);
+
+const deviceSchema = registry.register(
+  'Device',
+  z
+    .object({
+      id: z.string().openapi({
+        description:
+          'A SHA-256 digest of the session id, not the session id. Safe to render and ' +
+          'safe to send back to revoke; useless as a credential.',
+      }),
+      current: z.boolean(),
+      createdAt: z.string(),
+      lastSeenAt: z.string(),
+      userAgent: z.string(),
+      ip: z.string(),
+    })
+    .openapi('Device'),
+);
+
+const auth = { tags: ['Auth'] };
+const authed = { ...auth, security: [{ sessionCookie: [] }] };
+
+registry.registerPath({
+  ...auth,
+  method: 'post',
+  path: '/api/auth/otp/request',
+  summary: 'Ask for a sign-in code.',
+  description:
+    'There is no signup and no login \u2014 this one call covers both, which is where the ' +
+    'enumeration resistance comes from: a known address, an unknown address and a ' +
+    'throttled request all return **202** with the same body shape. A withheld request ' +
+    'still returns a well-formed challengeId that no challenge stands behind, so ' +
+    'verifying against it answers "expired" exactly as a real one would.\n\n' +
+    'Limits: 5 per address per hour, 20 per IP per hour, and a 60-second resend cooldown. ' +
+    '`cooldownSeconds` is for the resend button\u2019s countdown, not a signal about the address.',
+  request: { body: { content: { 'application/json': { schema: requestCodeSchema } } } },
+  responses: {
+    202: json(
+      envelope(z.object({ challengeId: z.string(), cooldownSeconds: z.number().int() })),
+      'A code has been sent, or convincingly has not.',
+    ),
+    422: errors[422],
+    503: json(
+      errorSchema,
+      'The code could not be sent. Our fault, and the same for every address.',
+    ),
+  },
+});
+
+registry.registerPath({
+  ...auth,
+  method: 'post',
+  path: '/api/auth/otp/verify',
+  summary: 'Exchange a code for a session.',
+  description:
+    'The first correct code for an address **creates** the account, already verified: ' +
+    'possession of a code mailed there is the verification.\n\n' +
+    'Sets `__Host-hae_sid`. Any session presented is destroyed and a new id issued, which ' +
+    'is the session-fixation defence. Five wrong attempts destroy the challenge, so the ' +
+    'guess budget is 25 an hour against a space of 10\u2076.',
+  request: { body: { content: { 'application/json': { schema: verifyCodeSchema } } } },
+  responses: {
+    200: json(envelope(z.object({ user: userSchema })), 'Signed in.'),
+    400: json(errorSchema, 'Wrong or expired. `details.attemptsRemaining` when it was wrong.'),
+    429: json(errorSchema, 'The challenge is burnt. Ask for a new code.'),
+  },
+});
+
+registry.registerPath({
+  ...authed,
+  method: 'post',
+  path: '/api/auth/step-up/request',
+  summary: 'Ask for a code to re-confirm the current session.',
+  responses: {
+    202: json(
+      envelope(z.object({ challengeId: z.string(), cooldownSeconds: z.number().int() })),
+      'Sent to the session\u2019s own address.',
+    ),
+    401: errors[401],
+  },
+});
+
+registry.registerPath({
+  ...authed,
+  method: 'post',
+  path: '/api/auth/step-up/verify',
+  summary: 'Re-confirm, without replacing the session.',
+  description:
+    'Moves `authAt` and nothing else. The session id deliberately does **not** rotate: ' +
+    're-proving identity in the middle of a destructive action must not discard the action. ' +
+    'The code must have been minted for this session\u2019s own address.',
+  request: { body: { content: { 'application/json': { schema: verifyCodeSchema } } } },
+  responses: {
+    200: json(envelope(z.object({ authAt: z.string() })), 'Confirmed.'),
+    400: json(errorSchema, 'Wrong, expired, or minted for another account.'),
+    401: errors[401],
+  },
+});
+
+registry.registerPath({
+  ...authed,
+  method: 'get',
+  path: '/api/auth/me',
+  summary: 'The signed-in account.',
+  responses: {
+    200: json(envelope(z.object({ user: userSchema, authAt: z.string() })), 'The account.'),
+    401: errors[401],
+  },
+});
+
+registry.registerPath({
+  ...authed,
+  method: 'patch',
+  path: '/api/auth/me',
+  summary: 'Set or clear the display name.',
+  request: { body: { content: { 'application/json': { schema: updateProfileSchema } } } },
+  responses: { 200: json(envelope(z.object({ user: userSchema })), 'Updated.'), 401: errors[401] },
+});
+
+registry.registerPath({
+  ...auth,
+  method: 'post',
+  path: '/api/auth/sign-out',
+  summary: 'End this session.',
+  description:
+    '204 whether or not there was one. Signing out cannot usefully fail, and a 401 here ' +
+    'would be telling a signed-out person to sign in before they may sign out.',
+  responses: { 204: { description: 'Ended, and the cookie cleared.' } },
+});
+
+registry.registerPath({
+  ...authed,
+  method: 'post',
+  path: '/api/auth/sign-out-everywhere',
+  summary: 'Revoke every other session, keeping this one.',
+  responses: {
+    200: json(envelope(z.object({ revoked: z.number().int() })), 'How many were ended.'),
+    401: errors[401],
+  },
+});
+
+registry.registerPath({
+  ...authed,
+  method: 'get',
+  path: '/api/auth/devices',
+  summary: 'Every active session on this account.',
+  responses: {
+    200: json(envelope(z.array(deviceSchema)), 'Most recently seen first.'),
+    401: errors[401],
+  },
+});
+
+registry.registerPath({
+  ...authed,
+  method: 'delete',
+  path: '/api/auth/devices/{id}',
+  summary: 'Revoke one session.',
+  description:
+    'Scoped to this account\u2019s own sessions, so another account\u2019s cannot be ended.',
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 204: { description: 'Revoked.' }, 401: errors[401], 404: errors[404] },
+});
 
 /* ------------------------------------------------------------------ public -- */
 

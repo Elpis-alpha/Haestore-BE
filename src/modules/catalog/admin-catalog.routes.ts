@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { requireRole } from '../../middleware/require-role.js';
+import { requireStepUp } from '../../middleware/session.js';
 import {
   body,
   idParam,
@@ -149,7 +150,16 @@ adminCatalogRouter.post(
   },
 );
 
-adminCatalogRouter.delete('/categories/:id', async (req, res) => {
+/**
+ * Behind step-up, because it cannot be undone.
+ *
+ * `requireRole` on the router answers "is this an admin". This answers "is this admin
+ * *here, now*" — a session left open on an unattended laptop is a valid session, and
+ * the twelve-hour window is what stops it being enough to delete a branch of the
+ * catalogue. It responds 403 STEP_UP_REQUIRED rather than 401, so the client re-verifies
+ * a code **without losing the session**, and whatever the person was doing survives.
+ */
+adminCatalogRouter.delete('/categories/:id', requireStepUp(), async (req, res) => {
   await deleteCategory(idParam(req));
   res.status(204).end();
 });
@@ -208,7 +218,8 @@ adminCatalogRouter.post(
   },
 );
 
-adminCatalogRouter.delete('/products/:id', async (req, res) => {
+/** Step-up, for the same reason as deleting a category. */
+adminCatalogRouter.delete('/products/:id', requireStepUp(), async (req, res) => {
   await deleteProduct(idParam(req));
   res.status(204).end();
 });

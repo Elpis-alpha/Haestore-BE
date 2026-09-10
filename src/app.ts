@@ -10,6 +10,9 @@ import { errorHandler, notFoundHandler } from './middleware/error.js';
 import { healthRouter } from './modules/health/health.routes.js';
 import { catalogRouter } from './modules/catalog/catalog.routes.js';
 import { adminCatalogRouter } from './modules/catalog/admin-catalog.routes.js';
+import { authRouter } from './modules/auth/auth.routes.js';
+import { devOutboxRouter } from './modules/auth/dev-outbox.routes.js';
+import { attachSession } from './middleware/session.js';
 import './middleware/auth-context.js';
 
 export function createApp(): Express {
@@ -56,11 +59,21 @@ export function createApp(): Express {
   );
   app.use(originGuard);
 
+  // Resolves the session cookie into req.auth for everything below. It is not a guard
+  // — it decides who is calling, never whether they may — so it is safe above the
+  // public routes, which need to know an admin is an admin without requiring one.
+  app.use(attachSession);
+
   app.use(healthRouter);
+  app.use('/api/auth', authRouter);
   app.use('/api/catalog', catalogRouter);
   // Every admin router is gated inside itself by requireRole, mounted once at the top
   // of the router rather than per handler.
   app.use('/api/admin/catalog', adminCatalogRouter);
+
+  // Not mounted at all in production, so the sign-in codes it exposes cannot be
+  // reached by a path that merely refuses. The router carries its own guard as well.
+  if (!isProduction) app.use('/api/dev', devOutboxRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

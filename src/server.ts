@@ -9,6 +9,7 @@ import { ensureProductsIndex, handleSearchJob } from './search/indexer.js';
 import { startSearchWorker, stopSearchWorker, enqueueSettingsSync } from './search/queue.js';
 import { startOutboxRelay, stopOutboxRelay } from './search/relay.js';
 import { startReconciliation, stopReconciliation } from './search/reconcile.js';
+import { verifyMailTransport } from './mail/transport.js';
 
 async function main(): Promise<void> {
   // Connect before listening, so the process never accepts traffic it cannot serve.
@@ -45,6 +46,23 @@ async function main(): Promise<void> {
     logger.error({ err: err.message }, 'search: outbox relay failed to start'),
   );
   startReconciliation();
+
+  /**
+   * Mail is checked, loudly, and **never fatally**.
+   *
+   * The 2022 deployment did `await verifyMailer()` before `app.listen()` and
+   * `process.exit(1)` on failure. Combined with `restart: unless-stopped`, a blocked
+   * SMTP port turned into a container that crash-looped forever while the logs looked
+   * like a hang. A mail outage should cost sign-ins, not the whole shop.
+   */
+  await verifyMailTransport().then(
+    () => logger.info({ driver: env.MAIL_DRIVER }, 'mail: transport ready'),
+    (err: Error) =>
+      logger.error(
+        { err: err.message, driver: env.MAIL_DRIVER },
+        'mail: transport is NOT working — sign-in will fail until this is fixed',
+      ),
+  );
 
   const server = createServer(createApp());
 
