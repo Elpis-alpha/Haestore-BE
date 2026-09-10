@@ -17,12 +17,6 @@ loadDotenv();
  * a generic undefined.
  */
 
-const bool = (fallback: boolean) =>
-  z
-    .enum(['true', 'false', '1', '0'])
-    .transform((v) => v === 'true' || v === '1')
-    .default(fallback ? 'true' : 'false');
-
 const csv = z
   .string()
   .default('')
@@ -61,23 +55,22 @@ const envSchema = z.object({
   ADMIN_EMAILS: csv,
 
   // ---- Mail --------------------------------------------------------------
-  // Two transports, because the constraint differs by environment. Locally, SMTP to
-  // Mailpit on 1025 is ideal — nothing leaves the machine and every message is
-  // inspectable. In production, most VPS hosts block outbound 25/465/587 as an
-  // anti-spam policy, so an SMTP send hangs until it times out; the Gmail HTTPS API
-  // reaches the same mailbox over 443. See docs/GMAIL-API-MIGRATION-NOTE.md.
-  MAIL_DRIVER: z.enum(['smtp', 'gmail-api', 'console']).default('smtp'),
+  // Gmail over HTTPS, and nothing else. SMTP was the obvious local convenience,
+  // but most VPS hosts block outbound 25/465/587 as an anti-spam policy, so an
+  // SMTP send does not fail fast — it hangs until it times out. Carrying a
+  // transport that cannot be the production one only buys a class of bug that
+  // appears exclusively in production. See docs/GMAIL-API-MIGRATION-NOTE.md.
+  //
+  //   console   — prints the message; a fresh clone with no credentials works.
+  //   gmail-api — sends for real over 443.
+  MAIL_DRIVER: z.enum(['console', 'gmail-api']).default('console'),
 
-  // driver: smtp
-  SMTP_HOST: z.string().default('127.0.0.1'),
-  SMTP_PORT: z.coerce.number().int().positive().default(1025),
-  SMTP_SECURE: bool(false),
-  SMTP_USER: z.string().optional(),
-  SMTP_PASS: z.string().optional(),
-
-  // driver: gmail-api. MAIL_REDIRECT_URI is declared because it exists in .env and a
-  // reader will look for it here, but the refresh-token flow never uses it — it only
-  // mattered when the token was first minted.
+  // Required by the gmail-api driver, asserted at the point of use. The refresh
+  // token needs https://mail.google.com/ or .../auth/gmail.send, and the Gmail API
+  // must be enabled on the Cloud project owning the client id or sends return 403
+  // accessNotConfigured. MAIL_REDIRECT_URI is declared because it is in .env and a
+  // reader will look for it here, but the refresh-token flow never reads it — it
+  // only mattered when the token was first minted.
   MAIL_CLIENT_ID: z.string().optional(),
   MAIL_CLIENT_SECRET: z.string().optional(),
   MAIL_REFRESH_TOKEN: z.string().optional(),
