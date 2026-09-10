@@ -2,7 +2,7 @@
   "name": "haestore-api",
   "version": "0.1.0",
   "private": true,
-  "description": "Hæstore API — Express 5, TypeScript, Mongoose 8",
+  "description": "H\u00e6store API \u2014 Express 5, TypeScript, Mongoose 8",
   "license": "UNLICENSED",
   "type": "module",
   "engines": {
@@ -19,9 +19,14 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test"
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "check:all": "npm run check && npm run test:integration",
+    "openapi:generate": "tsx src/openapi/generate.ts",
+    "openapi:check": "npm run openapi:generate && git diff --exit-code openapi.json"
   },
   "dependencies": {
+    "@asteasolutions/zod-to-openapi": "^9.1.0",
     "compression": "^1.7.5",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
@@ -35,7 +40,7 @@
     "pino": "^9.6.0",
     "pino-http": "^10.4.0",
     "rate-limit-redis": "^4.2.0",
-    "zod": "^3.24.1"
+    "zod": "^4.6.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
@@ -44,10 +49,13 @@
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.7",
+    "@types/supertest": "^7.2.1",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^9.1.0",
+    "mongodb-memory-server": "^11.2.0",
     "pino-pretty": "^13.0.0",
     "prettier": "^3.4.2",
+    "supertest": "^7.2.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.20.0",

@@ -1,12 +1,12 @@
 import { defineConfig } from 'vitest/config';
 
+/**
+ * Unit tests only. They touch no infrastructure and run in well under a second, which
+ * is what makes them worth running on every save.
+ */
 export default defineConfig({
   test: {
-    environment: 'node',
     include: ['src/**/*.test.ts'],
-    // Integration tests spin up real stores; give them room without hiding a hang.
-    testTimeout: 20_000,
-    hookTimeout: 30_000,
-    coverage: { provider: 'v8', include: ['src/**/*.ts'], exclude: ['src/**/*.test.ts'] },
+    exclude: ['src/**/*.integration.test.ts', 'node_modules/**'],
   },
 });

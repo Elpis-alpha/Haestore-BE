@@ -1,0 +1,2533 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Hæstore API",
+    "version": "0.2.0",
+    "description": "The catalogue is admin-defined: categories, attributes and variants are data, not code. Endpoints that return filters or attribute sets describe whatever an administrator has configured, so a storefront built against this document needs no hardcoded knowledge of any particular product kind."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5000",
+      "description": "Local development"
+    }
+  ],
+  "components": {
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "example": "NOT_FOUND"
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {},
+              "requestId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "requestId"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "Money": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "description": "Minor units. 1999 is $19.99."
+          },
+          "currency": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 3
+          }
+        },
+        "required": [
+          "amount",
+          "currency"
+        ]
+      },
+      "AttributeOption": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "swatchHex": {
+            "type": "string"
+          },
+          "order": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "value",
+          "label",
+          "order"
+        ]
+      },
+      "EffectiveAttribute": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "defId": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "select",
+              "multiselect",
+              "text",
+              "number",
+              "boolean",
+              "color",
+              "dimension"
+            ]
+          },
+          "unit": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttributeOption"
+            }
+          },
+          "isFilterable": {
+            "type": "boolean"
+          },
+          "isSearchable": {
+            "type": "boolean"
+          },
+          "isAxisEligible": {
+            "type": "boolean"
+          },
+          "filterUi": {
+            "type": "string",
+            "enum": [
+              "checkbox",
+              "swatch",
+              "range",
+              "toggle",
+              "select"
+            ]
+          },
+          "validation": {
+            "type": "object",
+            "properties": {
+              "min": {
+                "type": "number"
+              },
+              "max": {
+                "type": "number"
+              },
+              "step": {
+                "type": "number"
+              },
+              "maxLength": {
+                "type": "number"
+              }
+            }
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "order": {
+            "type": "integer"
+          },
+          "group": {
+            "type": "string"
+          },
+          "inheritedFrom": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          }
+        },
+        "required": [
+          "key",
+          "defId",
+          "label",
+          "type",
+          "options",
+          "isFilterable",
+          "isSearchable",
+          "isAxisEligible",
+          "filterUi",
+          "validation",
+          "required",
+          "order",
+          "inheritedFrom"
+        ]
+      },
+      "CategoryFilter": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "select",
+              "multiselect",
+              "text",
+              "number",
+              "boolean",
+              "color",
+              "dimension"
+            ]
+          },
+          "filterUi": {
+            "type": "string",
+            "enum": [
+              "checkbox",
+              "swatch",
+              "range",
+              "toggle",
+              "select"
+            ]
+          },
+          "unit": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttributeOption"
+            }
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "type",
+          "filterUi",
+          "options"
+        ],
+        "description": "One filter in the storefront panel, generated from an admin-defined attribute. The frontend has no hardcoded knowledge of any of these."
+      },
+      "Category": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string",
+            "example": "coffee-tea/beans"
+          },
+          "parent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ancestors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Root-first, including self."
+          },
+          "depth": {
+            "type": "integer"
+          },
+          "order": {
+            "type": "integer"
+          },
+          "description": {
+            "type": "string"
+          },
+          "imagePublicId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "_id",
+          "name",
+          "slug",
+          "path",
+          "parent",
+          "ancestors",
+          "depth",
+          "order"
+        ]
+      },
+      "ProductCard": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "subtitle": {
+            "type": "string"
+          },
+          "priceRange": {
+            "type": "object",
+            "properties": {
+              "min": {
+                "type": "integer"
+              },
+              "max": {
+                "type": "integer"
+              },
+              "currency": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "min",
+              "max",
+              "currency"
+            ]
+          },
+          "inStock": {
+            "type": "boolean"
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "publicId": {
+                  "type": "string"
+                },
+                "alt": {
+                  "type": "string"
+                },
+                "width": {
+                  "type": "integer"
+                },
+                "height": {
+                  "type": "integer"
+                },
+                "blurDataUrl": {
+                  "type": "string"
+                },
+                "position": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "publicId",
+                "alt",
+                "position"
+              ]
+            }
+          },
+          "ratingAverage": {
+            "type": "number"
+          },
+          "ratingCount": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "_id",
+          "title",
+          "slug",
+          "inStock",
+          "images",
+          "ratingAverage",
+          "ratingCount"
+        ]
+      },
+      "ProductAttribute": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "select",
+              "multiselect",
+              "text",
+              "number",
+              "boolean",
+              "color",
+              "dimension"
+            ]
+          },
+          "valueString": {
+            "type": "string"
+          },
+          "valueStrings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "valueNumber": {
+            "type": "number"
+          },
+          "valueBool": {
+            "type": "boolean"
+          },
+          "valueDim": {
+            "type": "object",
+            "properties": {
+              "length": {
+                "type": "number"
+              },
+              "width": {
+                "type": "number"
+              },
+              "height": {
+                "type": "number"
+              },
+              "unit": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "length",
+              "width",
+              "height",
+              "unit"
+            ]
+          },
+          "unit": {
+            "type": "string"
+          },
+          "displayValue": {
+            "type": "string",
+            "description": "Rendered at write time, so the spec table needs no lookup."
+          },
+          "order": {
+            "type": "integer"
+          },
+          "group": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "type",
+          "displayValue",
+          "order"
+        ]
+      },
+      "Variant": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string"
+          },
+          "sku": {
+            "type": "string"
+          },
+          "axisValues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key",
+                "value"
+              ]
+            }
+          },
+          "price": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "compareAtPrice": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "stock": {
+            "type": "object",
+            "properties": {
+              "onHand": {
+                "type": "integer"
+              },
+              "reserved": {
+                "type": "integer"
+              },
+              "available": {
+                "type": "integer"
+              },
+              "lowStockThreshold": {
+                "type": "integer"
+              },
+              "backorderable": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "onHand",
+              "reserved",
+              "available",
+              "lowStockThreshold",
+              "backorderable"
+            ]
+          },
+          "weightGrams": {
+            "type": "number"
+          },
+          "imagePublicIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive"
+            ]
+          },
+          "position": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "_id",
+          "sku",
+          "axisValues",
+          "price",
+          "stock",
+          "imagePublicIds",
+          "status",
+          "position"
+        ]
+      },
+      "Product": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProductCard"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "description": {
+                "type": "string"
+              },
+              "category": {
+                "type": "string"
+              },
+              "categoryAncestors": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "draft",
+                  "active",
+                  "archived"
+                ]
+              },
+              "attributes": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ProductAttribute"
+                }
+              },
+              "variantAxes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "variants": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Variant"
+                }
+              },
+              "defaultVariantId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "category",
+              "categoryAncestors",
+              "status",
+              "attributes",
+              "variantAxes",
+              "variants"
+            ]
+          }
+        ]
+      }
+    },
+    "parameters": {},
+    "securitySchemes": {
+      "sessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "__Host-hae_sid",
+        "description": "Opaque 256-bit session id, looked up in Redis. There are no JWTs anywhere in this system. The __Host- prefix forbids a Domain attribute, so a compromised subdomain cannot set a session cookie for the API."
+      }
+    }
+  },
+  "paths": {
+    "/api/catalog/categories": {
+      "get": {
+        "tags": [
+          "Catalogue"
+        ],
+        "summary": "The active category tree, flat and root-first.",
+        "responses": {
+          "200": {
+            "description": "Every active category.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Category"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/catalog/categories/by-path/{path}": {
+      "get": {
+        "tags": [
+          "Catalogue"
+        ],
+        "summary": "One category, with the filter panel generated from its attributes.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "coffee-tea/beans"
+            },
+            "required": true,
+            "name": "path",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The category and its generated filters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "category": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string"
+                            },
+                            "slug": {
+                              "type": "string"
+                            },
+                            "path": {
+                              "type": "string",
+                              "example": "coffee-tea/beans"
+                            },
+                            "description": {
+                              "type": "string"
+                            },
+                            "ancestors": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "Root-first, including self."
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "slug",
+                            "path",
+                            "ancestors"
+                          ]
+                        },
+                        "filters": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/CategoryFilter"
+                          }
+                        }
+                      },
+                      "required": [
+                        "category",
+                        "filters"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/catalog/products": {
+      "get": {
+        "tags": [
+          "Catalogue"
+        ],
+        "summary": "Degraded product listing. Meilisearch serves this on the storefront.",
+        "description": "Keyset pagination, never .skip(n). Page size defaults to 24 and is capped at 60. Returns `page.degraded: true` so a caller can tell this apart from the search path.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "category",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 60
+            },
+            "required": false,
+            "name": "per_page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "newest",
+                "price_asc",
+                "price_desc"
+              ]
+            },
+            "required": false,
+            "name": "sort",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "boolean"
+            },
+            "required": false,
+            "name": "in_stock",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of product cards.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ProductCard"
+                      }
+                    },
+                    "page": {
+                      "type": "object",
+                      "properties": {
+                        "perPage": {
+                          "type": "integer"
+                        },
+                        "hasMore": {
+                          "type": "boolean"
+                        },
+                        "nextCursor": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "degraded": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "perPage",
+                        "hasMore",
+                        "nextCursor",
+                        "degraded"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "page"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/catalog/products/{slug}": {
+      "get": {
+        "tags": [
+          "Catalogue"
+        ],
+        "summary": "One product, with its attributes and variants.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "slug",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The product.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Product"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/catalog/attributes": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin catalogue"
+        ],
+        "summary": "Every attribute definition.",
+        "responses": {
+          "200": {
+            "description": "Definitions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {}
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin catalogue"
+        ],
+        "summary": "Define a new attribute.",
+        "description": "The key is permanent. It becomes a Meilisearch filterable attribute, a public URL parameter, the discriminator on every stored value and an entry in variantAxes, so renaming would break bookmarked filter URLs and orphan the index.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "select",
+                      "multiselect",
+                      "text",
+                      "number",
+                      "boolean",
+                      "color",
+                      "dimension"
+                    ]
+                  },
+                  "unit": {
+                    "type": "string",
+                    "maxLength": 16
+                  },
+                  "options": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "value": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 60,
+                          "pattern": "^[a-z0-9][a-z0-9_-]*$/i"
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120
+                        },
+                        "swatchHex": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-fA-F]{6}$"
+                        },
+                        "order": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "default": 0
+                        }
+                      },
+                      "required": [
+                        "value",
+                        "label"
+                      ]
+                    },
+                    "maxItems": 200,
+                    "default": []
+                  },
+                  "isFilterable": {
+                    "type": "boolean",
+                    "default": true
+                  },
+                  "isSearchable": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "isVariantAxis": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "filterUi": {
+                    "type": "string",
+                    "enum": [
+                      "checkbox",
+                      "swatch",
+                      "range",
+                      "toggle",
+                      "select"
+                    ],
+                    "default": "checkbox"
+                  },
+                  "validation": {
+                    "type": "object",
+                    "properties": {
+                      "min": {
+                        "type": "number"
+                      },
+                      "max": {
+                        "type": "number"
+                      },
+                      "step": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      "maxLength": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 5000
+                      },
+                      "requiredByDefault": {
+                        "type": "boolean",
+                        "default": false
+                      }
+                    },
+                    "default": {
+                      "requiredByDefault": false
+                    }
+                  }
+                },
+                "required": [
+                  "key",
+                  "label",
+                  "type"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {}
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with something that already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The body failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/catalog/attributes/{id}": {
+      "patch": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin catalogue"
+        ],
+        "summary": "Edit an attribute. Its key and type cannot change.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "unit": {
+                    "type": "string",
+                    "maxLength": 16
+                  },
+                  "options": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "value": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 60,
+                          "pattern": "^[a-z0-9][a-z0-9_-]*$/i"
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120
+                        },
+                        "swatchHex": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-fA-F]{6}$"
+                        },
+                        "order": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "default": 0
+                        }
+                      },
+                      "required": [
+                        "value",
+                        "label"
+                      ]
+                    },
+                    "maxItems": 200,
+                    "default": []
+                  },
+                  "isFilterable": {
+                    "type": "boolean",
+                    "default": true
+                  },
+                  "isSearchable": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "isVariantAxis": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "filterUi": {
+                    "type": "string",
+                    "enum": [
+                      "checkbox",
+                      "swatch",
+                      "range",
+                      "toggle",
+                      "select"
+                    ],
+                    "default": "checkbox"
+                  },
+                  "validation": {
+                    "type": "object",
+                    "properties": {
+                      "min": {
+                        "type": "number"
+                      },
+                      "max": {
+                        "type": "number"
+                      },
+                      "step": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      "maxLength": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 5000
+                      },
+                      "requiredByDefault": {
+                        "type": "boolean",
+                        "default": false
+                      }
+                    },
+                    "default": {
+                      "requiredByDefault": false
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {}
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/catalog/categories": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin catalogue"
+        ],
+        "summary": "Create a category.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "slug": {
+                    "type": "string",
+                    "maxLength": 80,
+                    "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                  },
+                  "parent": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^[0-9a-fA-F]{24}$",
+                    "default": null
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "imagePublicId": {
+                    "type": "string"
+                  },
+                  "order": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 0
+                  },
+                  "validationMode": {
+                    "type": "string",
+                    "enum": [
+                      "lenient",
+                      "strict"
+                    ],
+                    "default": "lenient"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "active",
+                      "hidden"
+                    ],
+                    "default": "active"
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Category"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with something that already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/catalog/categories/{id}": {
+      "patch": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin catalogue"
+        ],
+        "summary": "Rename or reconfigure a category. A slug change cascades to descendant paths.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "slug": {
+                    "type": "string",
+                    "maxLength": 80,
+                    "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "imagePublicId": {
+                    "type": "string"
+                  },
+                  "order": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 0
+                  },
+                  "validationMode": {
+                    "type": "string",
+                    "enum": [
+                      "lenient",
+                      "strict"
+                    ],
+                    "default": "lenient"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "active",
+                      "hidden"
+                    ],
+                    "default": "active"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Category"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/catalog/categories/{id}/move": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin catalogue"
+        ],
+        "summary": "Reparent a category.",
+        "description": "Separate from PATCH because it rewrites the ancestry and path of every descendant and the denormalised categoryAncestors of every product beneath it, in one transaction.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "parent": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^[0-9a-fA-F]{24}$"
+                  }
+                },
+                "required": [
+                  "parent"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Moved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Category"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/catalog/categories/{id}/attributes": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin catalogue"
+        ],
+        "summary": "Bind an attribute to a category.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "defId": {
+                    "type": "string",
+                    "pattern": "^[0-9a-fA-F]{24}$"
+                  },
+                  "required": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "order": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 0
+                  },
+                  "group": {
+                    "type": "string",
+                    "maxLength": 60
+                  }
+                },
+                "required": [
+                  "defId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Bound.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Category"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/catalog/categories/{id}/suppressed": {
+      "put": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin catalogue"
+        ],
+        "summary": "Drop inherited attributes on this branch.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "keys": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                    },
+                    "maxItems": 100
+                  }
+                },
+                "required": [
+                  "keys"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Category"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/catalog/categories/{id}/effective-attributes": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin catalogue"
+        ],
+        "summary": "Every attribute that applies here, inherited ones included.",
+        "description": "What the product form renders from. Each says which ancestor contributed it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The effective set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "categoryId": {
+                          "type": "string"
+                        },
+                        "categoryPath": {
+                          "type": "string"
+                        },
+                        "validationMode": {
+                          "type": "string",
+                          "enum": [
+                            "lenient",
+                            "strict"
+                          ]
+                        },
+                        "attributes": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/EffectiveAttribute"
+                          }
+                        }
+                      },
+                      "required": [
+                        "categoryId",
+                        "categoryPath",
+                        "validationMode",
+                        "attributes"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/catalog/products": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin catalogue"
+        ],
+        "summary": "Create a product.",
+        "description": "Attributes are sent flat — { roast: \"medium\", weight_g: 250 } — and validated at runtime against the category's effective set. Unknown keys are rejected. In lenient mode a missing required attribute is reported on the product rather than refused.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "slug": {
+                    "type": "string",
+                    "maxLength": 80,
+                    "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                  },
+                  "subtitle": {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 20000
+                  },
+                  "categoryId": {
+                    "type": "string",
+                    "pattern": "^[0-9a-fA-F]{24}$"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "draft",
+                      "active",
+                      "archived"
+                    ],
+                    "default": "draft"
+                  },
+                  "attributes": {
+                    "type": "object",
+                    "additionalProperties": {},
+                    "default": {}
+                  },
+                  "variantAxes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 4,
+                    "default": []
+                  },
+                  "variants": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "sku": {
+                          "type": "string",
+                          "maxLength": 64
+                        },
+                        "axisValues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "value"
+                            ]
+                          },
+                          "default": []
+                        },
+                        "price": {
+                          "type": "object",
+                          "properties": {
+                            "amount": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "currency": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 3,
+                              "pattern": "^[A-Z]{3}$"
+                            }
+                          },
+                          "required": [
+                            "amount",
+                            "currency"
+                          ]
+                        },
+                        "compareAtPrice": {
+                          "type": "object",
+                          "properties": {
+                            "amount": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "currency": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 3,
+                              "pattern": "^[A-Z]{3}$"
+                            }
+                          },
+                          "required": [
+                            "amount",
+                            "currency"
+                          ]
+                        },
+                        "stock": {
+                          "type": "object",
+                          "properties": {
+                            "onHand": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "default": 0
+                            },
+                            "lowStockThreshold": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "default": 3
+                            },
+                            "backorderable": {
+                              "type": "boolean",
+                              "default": false
+                            }
+                          },
+                          "default": {
+                            "onHand": 0,
+                            "lowStockThreshold": 3,
+                            "backorderable": false
+                          }
+                        },
+                        "weightGrams": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "imagePublicIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "default": []
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "inactive"
+                          ],
+                          "default": "active"
+                        },
+                        "position": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "default": 0
+                        }
+                      },
+                      "required": [
+                        "price"
+                      ]
+                    },
+                    "maxItems": 100,
+                    "default": []
+                  },
+                  "images": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "publicId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "alt": {
+                          "type": "string",
+                          "maxLength": 200,
+                          "default": ""
+                        },
+                        "width": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        },
+                        "height": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        },
+                        "blurDataUrl": {
+                          "type": "string"
+                        },
+                        "position": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "default": 0
+                        }
+                      },
+                      "required": [
+                        "publicId"
+                      ]
+                    },
+                    "maxItems": 24,
+                    "default": []
+                  }
+                },
+                "required": [
+                  "title",
+                  "categoryId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Product"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The body failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/catalog/products/{id}": {
+      "patch": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin catalogue"
+        ],
+        "summary": "Edit a product.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "slug": {
+                    "type": "string",
+                    "maxLength": 80,
+                    "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                  },
+                  "subtitle": {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 20000
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "draft",
+                      "active",
+                      "archived"
+                    ],
+                    "default": "draft"
+                  },
+                  "attributes": {
+                    "type": "object",
+                    "additionalProperties": {},
+                    "default": {}
+                  },
+                  "variantAxes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 4,
+                    "default": []
+                  },
+                  "variants": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "sku": {
+                          "type": "string",
+                          "maxLength": 64
+                        },
+                        "axisValues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "value"
+                            ]
+                          },
+                          "default": []
+                        },
+                        "price": {
+                          "type": "object",
+                          "properties": {
+                            "amount": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "currency": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 3,
+                              "pattern": "^[A-Z]{3}$"
+                            }
+                          },
+                          "required": [
+                            "amount",
+                            "currency"
+                          ]
+                        },
+                        "compareAtPrice": {
+                          "type": "object",
+                          "properties": {
+                            "amount": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "currency": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 3,
+                              "pattern": "^[A-Z]{3}$"
+                            }
+                          },
+                          "required": [
+                            "amount",
+                            "currency"
+                          ]
+                        },
+                        "stock": {
+                          "type": "object",
+                          "properties": {
+                            "onHand": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "default": 0
+                            },
+                            "lowStockThreshold": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "default": 3
+                            },
+                            "backorderable": {
+                              "type": "boolean",
+                              "default": false
+                            }
+                          },
+                          "default": {
+                            "onHand": 0,
+                            "lowStockThreshold": 3,
+                            "backorderable": false
+                          }
+                        },
+                        "weightGrams": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "imagePublicIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "default": []
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "inactive"
+                          ],
+                          "default": "active"
+                        },
+                        "position": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "default": 0
+                        }
+                      },
+                      "required": [
+                        "price"
+                      ]
+                    },
+                    "maxItems": 100,
+                    "default": []
+                  },
+                  "images": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "publicId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "alt": {
+                          "type": "string",
+                          "maxLength": 200,
+                          "default": ""
+                        },
+                        "width": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        },
+                        "height": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        },
+                        "blurDataUrl": {
+                          "type": "string"
+                        },
+                        "position": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "default": 0
+                        }
+                      },
+                      "required": [
+                        "publicId"
+                      ]
+                    },
+                    "maxItems": 24,
+                    "default": []
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Product"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/catalog/products/{id}/category": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin catalogue"
+        ],
+        "summary": "Move a product to another category, re-validating against the destination.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "categoryId": {
+                    "type": "string",
+                    "pattern": "^[0-9a-fA-F]{24}$"
+                  }
+                },
+                "required": [
+                  "categoryId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Moved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Product"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/catalog/products/{id}/variants/generate": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin catalogue"
+        ],
+        "summary": "Generate the variant grid from the chosen axes.",
+        "description": "The cartesian product of the values the product actually offers, not the category's full option set. Warns at 24, refuses above 100. Send dryRun to see the count before anything is written; existing rows are matched by grid position so prices and stock already entered survive a regeneration.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "axes": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string"
+                        },
+                        "values": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "minItems": 1
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "values"
+                      ]
+                    },
+                    "minItems": 1,
+                    "maxItems": 4
+                  },
+                  "dryRun": {
+                    "type": "boolean",
+                    "default": false
+                  }
+                },
+                "required": [
+                  "axes"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The plan, or the updated product.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "count": {
+                          "type": "integer"
+                        },
+                        "warn": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "count",
+                        "warn"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "webhooks": {}
+}

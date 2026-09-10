@@ -11,7 +11,13 @@ export default tseslint.config(
       parserOptions: {
         // Config files live outside tsconfig's `include`; allowDefaultProject lets the
         // type-aware rules lint them without inventing a second tsconfig.
-        projectService: { allowDefaultProject: ['eslint.config.js', 'vitest.config.ts'] },
+        projectService: {
+          allowDefaultProject: [
+            'eslint.config.js',
+            'vitest.config.ts',
+            'vitest.integration.config.ts',
+          ],
+        },
         tsconfigRootDir: import.meta.dirname,
       },
     },
@@ -28,5 +34,11 @@ export default tseslint.config(
     },
   },
   { files: ['**/*.test.ts'], rules: { '@typescript-eslint/no-unsafe-assignment': 'off' } },
+  {
+    // Command-line scripts report to stdout; that is their interface, not a stray
+    // debug statement left behind. The rule stays on everywhere a request is served.
+    files: ['src/openapi/generate.ts', 'src/scripts/**/*.ts'],
+    rules: { 'no-console': 'off' },
+  },
   prettier,
 );

@@ -36,13 +36,13 @@ const envSchema = z.object({
   // Comma-separated. Every non-GET request must present a matching Origin; this is
   // the CSRF defence that pairs with SameSite=Lax, so it has no default.
   ALLOWED_ORIGINS: csv,
-  PUBLIC_URL: z.string().url().default('http://localhost:5000'),
+  PUBLIC_URL: z.url().default('http://localhost:5000'),
 
   // ---- Datastores (required — the API is useless without them) -----------
   // Must carry directConnection=true against a single-node replica set. See ADR-002.
   MONGODB_URL: z.string().min(1, 'MONGODB_URL is required'),
   REDIS_URL: z.string().min(1, 'REDIS_URL is required'),
-  MEILISEARCH_HOST: z.string().url().default('http://127.0.0.1:7700'),
+  MEILISEARCH_HOST: z.url().default('http://127.0.0.1:7700'),
   MEILISEARCH_API_KEY: z.string().min(1).optional(),
 
   // ---- Auth --------------------------------------------------------------
@@ -74,9 +74,9 @@ const envSchema = z.object({
   MAIL_CLIENT_ID: z.string().optional(),
   MAIL_CLIENT_SECRET: z.string().optional(),
   MAIL_REFRESH_TOKEN: z.string().optional(),
-  MAIL_REDIRECT_URI: z.string().url().optional(),
+  MAIL_REDIRECT_URI: z.url().optional(),
 
-  MAIL_FROM_ADDRESS: z.string().email().default('hello@haestore.test'),
+  MAIL_FROM_ADDRESS: z.email().default('hello@haestore.test'),
   MAIL_FROM_NAME: z.string().default('Hæstore'),
 
   // ---- Media -------------------------------------------------------------

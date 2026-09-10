@@ -8,6 +8,9 @@ import { requestContext } from './middleware/request-context.js';
 import { originGuard } from './middleware/origin-guard.js';
 import { errorHandler, notFoundHandler } from './middleware/error.js';
 import { healthRouter } from './modules/health/health.routes.js';
+import { catalogRouter } from './modules/catalog/catalog.routes.js';
+import { adminCatalogRouter } from './modules/catalog/admin-catalog.routes.js';
+import './middleware/auth-context.js';
 
 export function createApp(): Express {
   const app = express();
@@ -54,6 +57,10 @@ export function createApp(): Express {
   app.use(originGuard);
 
   app.use(healthRouter);
+  app.use('/api/catalog', catalogRouter);
+  // Every admin router is gated inside itself by requireRole, mounted once at the top
+  // of the router rather than per handler.
+  app.use('/api/admin/catalog', adminCatalogRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

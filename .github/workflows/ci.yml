@@ -63,5 +63,18 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Integration tests
+        # Spins up its own MongoDB replica set via mongodb-memory-server and uses the
+        # Redis service above. The binary is cached between runs by setup-node's npm cache.
+        run: npm run test:integration
+        env:
+          REDIS_TEST_URL: redis://127.0.0.1:6379/15
+
+      - name: OpenAPI document is current
+        # Regenerates from the Zod schemas the routes actually validate with and fails if
+        # the committed document differs. This is what stops the cross-repo contract
+        # drifting from the implementation.
+        run: npm run openapi:check
+
       - name: Build
         run: npm run build
