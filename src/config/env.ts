@@ -61,11 +61,28 @@ const envSchema = z.object({
   ADMIN_EMAILS: csv,
 
   // ---- Mail --------------------------------------------------------------
+  // Two transports, because the constraint differs by environment. Locally, SMTP to
+  // Mailpit on 1025 is ideal — nothing leaves the machine and every message is
+  // inspectable. In production, most VPS hosts block outbound 25/465/587 as an
+  // anti-spam policy, so an SMTP send hangs until it times out; the Gmail HTTPS API
+  // reaches the same mailbox over 443. See docs/GMAIL-API-MIGRATION-NOTE.md.
+  MAIL_DRIVER: z.enum(['smtp', 'gmail-api', 'console']).default('smtp'),
+
+  // driver: smtp
   SMTP_HOST: z.string().default('127.0.0.1'),
   SMTP_PORT: z.coerce.number().int().positive().default(1025),
   SMTP_SECURE: bool(false),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
+
+  // driver: gmail-api. MAIL_REDIRECT_URI is declared because it exists in .env and a
+  // reader will look for it here, but the refresh-token flow never uses it — it only
+  // mattered when the token was first minted.
+  MAIL_CLIENT_ID: z.string().optional(),
+  MAIL_CLIENT_SECRET: z.string().optional(),
+  MAIL_REFRESH_TOKEN: z.string().optional(),
+  MAIL_REDIRECT_URI: z.string().url().optional(),
+
   MAIL_FROM_ADDRESS: z.string().email().default('hello@haestore.test'),
   MAIL_FROM_NAME: z.string().default('Hæstore'),
 
