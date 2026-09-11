@@ -23,6 +23,14 @@ import {
 import { clearSessionCookie, setSessionCookie } from './session-cookie.js';
 import { User } from './user.model.js';
 import { clientIp } from './client-ip.js';
+import {
+  clearGuestCookie,
+  guestKeyHash,
+  readGuestCookie,
+  setMergeFlag,
+} from '../cart/guest-cookie.js';
+import { claimGuestOrders, mergeGuestCart } from '../cart/cart.service.js';
+import { logger } from '../../lib/logger.js';
 
 export const authRouter: Router = Router();
 
@@ -56,18 +64,57 @@ authRouter.post('/otp/request', validateBody(requestCodeSchema), async (req, res
  */
 authRouter.post('/otp/verify', validateBody(verifyCodeSchema), async (req, res) => {
   const { challengeId, code } = body<VerifyCodeInput>(req);
+
+  // Read before anything else touches the cookie jar. The guest token has to survive
+  // long enough to name the cart being merged, and it is cleared below once it has.
+  const guestToken = readGuestCookie(req);
+
   const user = await verifySignInCode(challengeId, code);
 
   // Session fixation defence: whatever id the browser arrived holding is destroyed,
   // and the id it leaves with is new. An attacker who planted a session before
   // sign-in does not hold a signed-in one afterwards.
+  //
+  // This is also the rotation the guest-to-user upgrade needs. Becoming a signed-in
+  // person is a privilege change like any other, and a brand-new id satisfies it more
+  // completely than rotating the old one would.
   const existing = req.auth?.sessionId;
   if (existing) await destroySession(existing);
 
   const sessionId = await createSession(String(user._id), user.sessionVersion, contextOf(req));
   setSessionCookie(res, sessionId);
 
-  res.json({ data: { user: toPublicUser(user) } });
+  /**
+   * The merge, and the one place it happens.
+   *
+   * **A failed merge must not fail the sign-in.** The person has proved who they are;
+   * refusing them entry because their basket could not be combined would be trading a
+   * recoverable problem for an unrecoverable one — and the guest cart is still there,
+   * unclaimed, to be merged on the next attempt. The claim in mergeGuestCart is
+   * idempotent precisely so that retry is safe.
+   */
+  let merged = false;
+  if (guestToken) {
+    try {
+      merged = (await mergeGuestCart(String(user._id), guestKeyHash(guestToken))) !== null;
+    } catch (err) {
+      logger.error({ err: (err as Error).message }, 'auth: the guest cart could not be merged');
+    }
+    // Cleared either way. A guest cookie left in a signed-in browser is a second
+    // identity that nothing reads and that the next sign-out would silently restore.
+    clearGuestCookie(res);
+  }
+
+  // A readable flag, so the cart page knows whether to ask for the report at all —
+  // rather than asking on every visit and being told "no" almost every time.
+  if (merged) setMergeFlag(res, true);
+
+  claimGuestOrders(String(user._id), user.email);
+
+  // `mergeReport` says only whether there is one to fetch. The report itself is read
+  // from /api/cart/merge-report by the page the shopper lands on, because this response
+  // is about to be replaced by a navigation.
+  res.json({ data: { user: toPublicUser(user), mergeReport: merged } });
 });
 
 /**

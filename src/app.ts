@@ -12,6 +12,8 @@ import { catalogRouter } from './modules/catalog/catalog.routes.js';
 import { adminCatalogRouter } from './modules/catalog/admin-catalog.routes.js';
 import { authRouter } from './modules/auth/auth.routes.js';
 import { devOutboxRouter } from './modules/auth/dev-outbox.routes.js';
+import { cartRouter } from './modules/cart/cart.routes.js';
+import { wishlistRouter } from './modules/wishlist/wishlist.routes.js';
 import { attachSession } from './middleware/session.js';
 import './middleware/auth-context.js';
 
@@ -67,6 +69,10 @@ export function createApp(): Express {
   app.use(healthRouter);
   app.use('/api/auth', authRouter);
   app.use('/api/catalog', catalogRouter);
+  // Neither is a guard. A cart route reads req.auth and treats its absence as "this is
+  // a guest"; the wishlist router mounts requireSession once at its own top.
+  app.use('/api/cart', cartRouter);
+  app.use('/api/wishlist', wishlistRouter);
   // Every admin router is gated inside itself by requireRole, mounted once at the top
   // of the router rather than per handler.
   app.use('/api/admin/catalog', adminCatalogRouter);

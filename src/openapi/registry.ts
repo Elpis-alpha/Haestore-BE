@@ -23,6 +23,12 @@ import {
   updateProfileSchema,
   verifyCodeSchema,
 } from '../modules/auth/auth.schema.js';
+import {
+  addLineSchema,
+  addWishSchema,
+  moveLineSchema,
+  setQuantitySchema,
+} from '../modules/cart/cart.schema.js';
 
 /**
  * The contract between the two repos.
@@ -331,11 +337,27 @@ registry.registerPath({
     'The first correct code for an address **creates** the account, already verified: ' +
     'possession of a code mailed there is the verification.\n\n' +
     'Sets `__Host-hae_sid`. Any session presented is destroyed and a new id issued, which ' +
-    'is the session-fixation defence. Five wrong attempts destroy the challenge, so the ' +
-    'guess budget is 25 an hour against a space of 10\u2076.',
+    'is the session-fixation defence \u2014 and the rotation the guest-to-user upgrade ' +
+    'needs. Five wrong attempts destroy the challenge, so the guess budget is 25 an hour ' +
+    'against a space of 10\u2076.\n\n' +
+    'Any guest cart named by `__Host-hae_cid` is merged into the account here, and the ' +
+    'cookie is cleared. A merge that fails does **not** fail the sign-in: the guest cart ' +
+    'stays unclaimed and the next attempt picks it up.',
   request: { body: { content: { 'application/json': { schema: verifyCodeSchema } } } },
   responses: {
-    200: json(envelope(z.object({ user: userSchema })), 'Signed in.'),
+    200: json(
+      envelope(
+        z.object({
+          user: userSchema,
+          mergeReport: z.boolean().openapi({
+            description:
+              'True when a guest cart was folded in. Fetch the report itself from ' +
+              '/api/cart/merge-report on the destination page.',
+          }),
+        }),
+      ),
+      'Signed in.',
+    ),
     400: json(errorSchema, 'Wrong or expired. `details.attemptsRemaining` when it was wrong.'),
     429: json(errorSchema, 'The challenge is burnt. Ask for a new code.'),
   },
@@ -604,6 +626,331 @@ registry.registerPath({
   summary: 'One product, with its attributes and variants.',
   request: { params: z.object({ slug: z.string() }) },
   responses: { 200: json(envelope(productSchema), 'The product.'), 404: errors[404] },
+});
+
+/* -------------------------------------------------------------------- cart -- */
+
+/**
+ * The bag is described here in full, including the shapes it uses to explain itself.
+ *
+ * `LineChange` is the one worth reading. The cart never silently reconciles: every way
+ * a line differs from what the shopper last saw is a value in this union, carried on
+ * the line and on the merge report, so the frontend can say what happened rather than
+ * present a total that quietly moved.
+ */
+
+const lineChangeSchema = registry.register(
+  'LineChange',
+  z
+    .object({
+      kind: z.enum([
+        'added',
+        'quantity_raised',
+        'price_changed',
+        'clamped',
+        'saved_for_later',
+        'dropped',
+      ]),
+      from: z.union([z.number(), moneySchema]).optional(),
+      to: z.union([z.number(), moneySchema]).optional(),
+      available: z.number().int().optional(),
+      reason: z.enum(['out_of_stock', 'unavailable', 'currency']).optional(),
+    })
+    .openapi({
+      description:
+        'One thing that happened to a line. Which of from/to/reason are present ' +
+        'depends on `kind`; a line with no changes carries an empty array.',
+    })
+    .openapi('LineChange'),
+);
+
+const cartLineSchema = registry.register(
+  'CartLine',
+  z
+    .object({
+      lineKey: z.string().openapi({
+        description:
+          '`<productId>_<variantId>`. Derived, not generated, so two carts that never ' +
+          'met agree on what the same line is.',
+      }),
+      productId: z.string(),
+      variantId: z.string(),
+      sku: z.string(),
+      title: z.string(),
+      slug: z.string(),
+      axisValues: z.array(z.object({ key: z.string(), value: z.string() })),
+      imagePublicId: z.string().optional(),
+      unitPrice: moneySchema,
+      lineTotal: moneySchema.openapi({
+        description: 'unitPrice × sellableQuantity, computed on read. Never stored.',
+      }),
+      quantity: z.number().int().openapi({ description: 'What the shopper asked for.' }),
+      sellableQuantity: z
+        .number()
+        .int()
+        .openapi({
+          description:
+            'What can actually be bought right now. Lower than `quantity` means the ' +
+            'line carries a `clamped` or out-of-stock change; the totals use this one.',
+        }),
+      available: z.number().int().nullable(),
+      lowStockThreshold: z.number().int(),
+      backorderable: z.boolean(),
+      maxQuantity: z.number().int().openapi({
+        description: 'The ceiling for the stepper. Zero means the line cannot be bought.',
+      }),
+      changes: z.array(lineChangeSchema),
+      addedAt: z.string(),
+    })
+    .openapi('CartLine'),
+);
+
+const cartSchema = registry.register(
+  'Cart',
+  z
+    .object({
+      lines: z.array(cartLineSchema),
+      savedForLater: z.array(cartLineSchema).openapi({
+        description: 'Set aside on purpose or moved here when it sold out. Not in the totals.',
+      }),
+      subtotal: moneySchema,
+      itemCount: z
+        .number()
+        .int()
+        .openapi({ description: 'Pieces, not rows. What the bag badge shows.' }),
+      currency: z.string(),
+      needsAttention: z.boolean().openapi({
+        description: 'Some line changed under the shopper. Show the notices before checkout.',
+      }),
+    })
+    .openapi('Cart'),
+);
+
+const mergeReportSchema = registry.register(
+  'MergeReport',
+  z
+    .object({
+      cart: cartSchema,
+      rows: z.array(
+        z.object({
+          lineKey: z.string(),
+          title: z.string(),
+          axisValues: z.array(z.object({ key: z.string(), value: z.string() })),
+          changes: z.array(lineChangeSchema),
+        }),
+      ),
+      undoableUntil: z.string().nullable(),
+    })
+    .openapi({
+      description:
+        'What signing in did to the bag. A quantity collision takes MAX, never SUM — ' +
+        'so a row reading `quantity_raised 2 → 3` is the guest cart winning, not a sum.',
+    })
+    .openapi('MergeReport'),
+);
+
+const cart = { tags: ['Cart'] };
+
+registry.registerPath({
+  ...cart,
+  method: 'get',
+  path: '/api/cart',
+  summary: 'The bag, re-priced against live catalogue data.',
+  description:
+    'Works signed in or signed out. No cart is an empty cart, not a 404, and reading ' +
+    'never creates one — a guest cookie is issued only by the first add-to-cart.',
+  responses: { 200: json(envelope(cartSchema), 'The bag.') },
+});
+
+registry.registerPath({
+  ...cart,
+  method: 'post',
+  path: '/api/cart/lines',
+  summary: 'Add to the bag.',
+  description:
+    'The body carries a product, a variant and a quantity, and **no price of any kind**. ' +
+    'Every figure is read from the catalogue on the server. Adding a line that is ' +
+    'already there raises its quantity rather than making a second row. Sets the guest ' +
+    'cookie if there is no session and no cookie yet.',
+  request: { body: { content: { 'application/json': { schema: addLineSchema } } } },
+  responses: {
+    201: json(envelope(cartSchema), 'The whole bag, re-priced.'),
+    404: errors[404],
+    409: json(errorSchema, 'Sold out, or the bag is full.'),
+    422: errors[422],
+  },
+});
+
+registry.registerPath({
+  ...cart,
+  method: 'patch',
+  path: '/api/cart/lines/{lineKey}',
+  summary: 'Set a line quantity.',
+  description: 'Zero removes the line, so a stepper decrementing from 1 needs no second route.',
+  request: {
+    params: z.object({ lineKey: z.string() }),
+    body: { content: { 'application/json': { schema: setQuantitySchema } } },
+  },
+  responses: {
+    200: json(envelope(cartSchema), 'The whole bag, re-priced.'),
+    400: errors[400],
+    404: errors[404],
+  },
+});
+
+registry.registerPath({
+  ...cart,
+  method: 'delete',
+  path: '/api/cart/lines/{lineKey}',
+  summary: 'Remove a line.',
+  request: { params: z.object({ lineKey: z.string() }) },
+  responses: {
+    200: json(envelope(cartSchema), 'The whole bag, re-priced.'),
+    400: errors[400],
+    404: errors[404],
+  },
+});
+
+registry.registerPath({
+  ...cart,
+  method: 'post',
+  path: '/api/cart/lines/{lineKey}/move',
+  summary: 'Set a line aside, or put it back.',
+  request: {
+    params: z.object({ lineKey: z.string() }),
+    body: { content: { 'application/json': { schema: moveLineSchema } } },
+  },
+  responses: {
+    200: json(envelope(cartSchema), 'The whole bag, re-priced.'),
+    400: errors[400],
+    404: errors[404],
+  },
+});
+
+registry.registerPath({
+  ...cart,
+  method: 'delete',
+  path: '/api/cart',
+  summary: 'Empty the bag.',
+  description: 'Saved-for-later survives, because setting something aside was a separate decision.',
+  responses: { 200: json(envelope(cartSchema), 'The empty bag.') },
+});
+
+registry.registerPath({
+  ...cart,
+  security: [{ sessionCookie: [] }],
+  method: 'get',
+  path: '/api/cart/merge-report',
+  summary: 'What the last sign-in did to the bag.',
+  description:
+    'Null when there is nothing to report. Read by the page the shopper lands on rather ' +
+    'than returned from the verify call, whose response the navigation replaces.',
+  responses: {
+    200: json(envelope(mergeReportSchema.nullable()), 'The report, or null.'),
+    401: errors[401],
+  },
+});
+
+registry.registerPath({
+  ...cart,
+  security: [{ sessionCookie: [] }],
+  method: 'post',
+  path: '/api/cart/merge-report/dismiss',
+  summary: 'Mark the merge report as seen.',
+  responses: { 204: { description: 'Dismissed.' }, 401: errors[401] },
+});
+
+registry.registerPath({
+  ...cart,
+  security: [{ sessionCookie: [] }],
+  method: 'post',
+  path: '/api/cart/merge-report/undo',
+  summary: 'Put the bag back the way it was before the merge.',
+  description:
+    'Restores the account’s own lines, which does discard what the guest cart ' +
+    'contributed — that is what undoing a merge is. Available for seven days, once.',
+  responses: {
+    200: json(envelope(cartSchema), 'The restored bag.'),
+    400: json(errorSchema, 'That merge is too old to undo.'),
+    401: errors[401],
+    404: errors[404],
+    409: json(errorSchema, 'Already undone.'),
+  },
+});
+
+/* ---------------------------------------------------------------- wishlist -- */
+
+const wishlistEntrySchema = registry.register(
+  'WishlistEntry',
+  z
+    .object({
+      productId: z.string(),
+      variantId: z.string().nullable(),
+      lineKey: z.string().nullable().openapi({
+        description: 'Present when a variant was chosen, so the item can go straight to the bag.',
+      }),
+      title: z.string(),
+      slug: z.string(),
+      imagePublicId: z.string().optional(),
+      price: moneySchema.nullable(),
+      priceTo: moneySchema.nullable().openapi({
+        description: 'The top of the range, when the wish is for a product rather than a variant.',
+      }),
+      inStock: z.boolean(),
+      available: z.boolean().openapi({
+        description: 'Whether it can still be bought at all, which is not the same as in stock.',
+      }),
+      addedAt: z.string(),
+    })
+    .openapi({
+      description:
+        'Nothing about price or stock is stored on a wish — it is read live, because a ' +
+        'wishlist is looked at weeks after it is written.',
+    })
+    .openapi('WishlistEntry'),
+);
+
+const wishlist = { tags: ['Wishlist'], security: [{ sessionCookie: [] }] };
+
+registry.registerPath({
+  ...wishlist,
+  method: 'get',
+  path: '/api/wishlist',
+  summary: 'The wishlist.',
+  description:
+    'Signed in only, on purpose: a wishlist promises to remember across devices and ' +
+    'months, and a guest cookie can keep neither promise.',
+  responses: { 200: json(envelope(z.array(wishlistEntrySchema)), 'The list.'), 401: errors[401] },
+});
+
+registry.registerPath({
+  ...wishlist,
+  method: 'post',
+  path: '/api/wishlist',
+  summary: 'Add a wish.',
+  description: 'Idempotent: wishing for the same thing twice is one wish.',
+  request: { body: { content: { 'application/json': { schema: addWishSchema } } } },
+  responses: {
+    201: json(envelope(z.array(wishlistEntrySchema)), 'The list.'),
+    401: errors[401],
+    404: errors[404],
+    409: json(errorSchema, 'The wishlist is full.'),
+  },
+});
+
+registry.registerPath({
+  ...wishlist,
+  method: 'delete',
+  path: '/api/wishlist',
+  summary: 'Remove a wish.',
+  description:
+    'By body, not by path: a wish is a product plus an *optional* variant, and null is a ' +
+    'meaningful value there rather than an omission.',
+  request: { body: { content: { 'application/json': { schema: addWishSchema } } } },
+  responses: {
+    200: json(envelope(z.array(wishlistEntrySchema)), 'The list.'),
+    401: errors[401],
+  },
 });
 
 /* ------------------------------------------------------------------- admin -- */

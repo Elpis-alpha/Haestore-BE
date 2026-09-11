@@ -858,6 +858,351 @@
           "ratingAverage",
           "ratingCount"
         ]
+      },
+      "LineChange": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "added",
+              "quantity_raised",
+              "price_changed",
+              "clamped",
+              "saved_for_later",
+              "dropped"
+            ]
+          },
+          "from": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ]
+          },
+          "to": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "$ref": "#/components/schemas/Money"
+              }
+            ]
+          },
+          "available": {
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "out_of_stock",
+              "unavailable",
+              "currency"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "description": "One thing that happened to a line. Which of from/to/reason are present depends on `kind`; a line with no changes carries an empty array."
+      },
+      "CartLine": {
+        "type": "object",
+        "properties": {
+          "lineKey": {
+            "type": "string",
+            "description": "`<productId>_<variantId>`. Derived, not generated, so two carts that never met agree on what the same line is."
+          },
+          "productId": {
+            "type": "string"
+          },
+          "variantId": {
+            "type": "string"
+          },
+          "sku": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "axisValues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key",
+                "value"
+              ]
+            }
+          },
+          "imagePublicId": {
+            "type": "string"
+          },
+          "unitPrice": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "lineTotal": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              },
+              {
+                "description": "unitPrice × sellableQuantity, computed on read. Never stored."
+              }
+            ]
+          },
+          "quantity": {
+            "type": "integer",
+            "description": "What the shopper asked for."
+          },
+          "sellableQuantity": {
+            "type": "integer",
+            "description": "What can actually be bought right now. Lower than `quantity` means the line carries a `clamped` or out-of-stock change; the totals use this one."
+          },
+          "available": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "lowStockThreshold": {
+            "type": "integer"
+          },
+          "backorderable": {
+            "type": "boolean"
+          },
+          "maxQuantity": {
+            "type": "integer",
+            "description": "The ceiling for the stepper. Zero means the line cannot be bought."
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LineChange"
+            }
+          },
+          "addedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "lineKey",
+          "productId",
+          "variantId",
+          "sku",
+          "title",
+          "slug",
+          "axisValues",
+          "unitPrice",
+          "lineTotal",
+          "quantity",
+          "sellableQuantity",
+          "available",
+          "lowStockThreshold",
+          "backorderable",
+          "maxQuantity",
+          "changes",
+          "addedAt"
+        ]
+      },
+      "Cart": {
+        "type": "object",
+        "properties": {
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CartLine"
+            }
+          },
+          "savedForLater": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CartLine"
+            },
+            "description": "Set aside on purpose or moved here when it sold out. Not in the totals."
+          },
+          "subtotal": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "itemCount": {
+            "type": "integer",
+            "description": "Pieces, not rows. What the bag badge shows."
+          },
+          "currency": {
+            "type": "string"
+          },
+          "needsAttention": {
+            "type": "boolean",
+            "description": "Some line changed under the shopper. Show the notices before checkout."
+          }
+        },
+        "required": [
+          "lines",
+          "savedForLater",
+          "subtotal",
+          "itemCount",
+          "currency",
+          "needsAttention"
+        ]
+      },
+      "MergeReport": {
+        "type": "object",
+        "properties": {
+          "cart": {
+            "$ref": "#/components/schemas/Cart"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "lineKey": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "axisValues": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "value"
+                    ]
+                  }
+                },
+                "changes": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LineChange"
+                  }
+                }
+              },
+              "required": [
+                "lineKey",
+                "title",
+                "axisValues",
+                "changes"
+              ]
+            }
+          },
+          "undoableUntil": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "cart",
+          "rows",
+          "undoableUntil"
+        ],
+        "description": "What signing in did to the bag. A quantity collision takes MAX, never SUM — so a row reading `quantity_raised 2 → 3` is the guest cart winning, not a sum."
+      },
+      "WishlistEntry": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "string"
+          },
+          "variantId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lineKey": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Present when a variant was chosen, so the item can go straight to the bag."
+          },
+          "title": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "imagePublicId": {
+            "type": "string"
+          },
+          "price": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "priceTo": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "description": "The top of the range, when the wish is for a product rather than a variant."
+              }
+            ]
+          },
+          "inStock": {
+            "type": "boolean"
+          },
+          "available": {
+            "type": "boolean",
+            "description": "Whether it can still be bought at all, which is not the same as in stock."
+          },
+          "addedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "productId",
+          "variantId",
+          "lineKey",
+          "title",
+          "slug",
+          "price",
+          "priceTo",
+          "inStock",
+          "available",
+          "addedAt"
+        ],
+        "description": "Nothing about price or stock is stored on a wish — it is read live, because a wishlist is looked at weeks after it is written."
       }
     },
     "parameters": {},
@@ -956,7 +1301,7 @@
           "Auth"
         ],
         "summary": "Exchange a code for a session.",
-        "description": "The first correct code for an address **creates** the account, already verified: possession of a code mailed there is the verification.\n\nSets `__Host-hae_sid`. Any session presented is destroyed and a new id issued, which is the session-fixation defence. Five wrong attempts destroy the challenge, so the guess budget is 25 an hour against a space of 10⁶.",
+        "description": "The first correct code for an address **creates** the account, already verified: possession of a code mailed there is the verification.\n\nSets `__Host-hae_sid`. Any session presented is destroyed and a new id issued, which is the session-fixation defence — and the rotation the guest-to-user upgrade needs. Five wrong attempts destroy the challenge, so the guess budget is 25 an hour against a space of 10⁶.\n\nAny guest cart named by `__Host-hae_cid` is merged into the account here, and the cookie is cleared. A merge that fails does **not** fail the sign-in: the guest cart stays unclaimed and the next attempt picks it up.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -993,10 +1338,15 @@
                       "properties": {
                         "user": {
                           "$ref": "#/components/schemas/User"
+                        },
+                        "mergeReport": {
+                          "type": "boolean",
+                          "description": "True when a guest cart was folded in. Fetch the report itself from /api/cart/merge-report on the destination page."
                         }
                       },
                       "required": [
-                        "user"
+                        "user",
+                        "mergeReport"
                       ]
                     }
                   },
@@ -1796,6 +2146,734 @@
           },
           "404": {
             "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cart": {
+      "get": {
+        "tags": [
+          "Cart"
+        ],
+        "summary": "The bag, re-priced against live catalogue data.",
+        "description": "Works signed in or signed out. No cart is an empty cart, not a 404, and reading never creates one — a guest cookie is issued only by the first add-to-cart.",
+        "responses": {
+          "200": {
+            "description": "The bag.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Cart"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Cart"
+        ],
+        "summary": "Empty the bag.",
+        "description": "Saved-for-later survives, because setting something aside was a separate decision.",
+        "responses": {
+          "200": {
+            "description": "The empty bag.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Cart"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cart/lines": {
+      "post": {
+        "tags": [
+          "Cart"
+        ],
+        "summary": "Add to the bag.",
+        "description": "The body carries a product, a variant and a quantity, and **no price of any kind**. Every figure is read from the catalogue on the server. Adding a line that is already there raises its quantity rather than making a second row. Sets the guest cookie if there is no session and no cookie yet.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "productId": {
+                    "type": "string",
+                    "pattern": "^[0-9a-fA-F]{24}$"
+                  },
+                  "variantId": {
+                    "type": "string",
+                    "pattern": "^[0-9a-fA-F]{24}$"
+                  },
+                  "quantity": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 99,
+                    "default": 1
+                  }
+                },
+                "required": [
+                  "productId",
+                  "variantId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The whole bag, re-priced.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Cart"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Sold out, or the bag is full.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The body failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cart/lines/{lineKey}": {
+      "patch": {
+        "tags": [
+          "Cart"
+        ],
+        "summary": "Set a line quantity.",
+        "description": "Zero removes the line, so a stepper decrementing from 1 needs no second route.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "lineKey",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "quantity": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "maximum": 99
+                  }
+                },
+                "required": [
+                  "quantity"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The whole bag, re-priced.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Cart"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Cart"
+        ],
+        "summary": "Remove a line.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "lineKey",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The whole bag, re-priced.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Cart"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cart/lines/{lineKey}/move": {
+      "post": {
+        "tags": [
+          "Cart"
+        ],
+        "summary": "Set a line aside, or put it back.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "lineKey",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string",
+                    "enum": [
+                      "saved",
+                      "cart"
+                    ]
+                  }
+                },
+                "required": [
+                  "to"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The whole bag, re-priced.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Cart"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cart/merge-report": {
+      "get": {
+        "tags": [
+          "Cart"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "What the last sign-in did to the bag.",
+        "description": "Null when there is nothing to report. Read by the page the shopper lands on rather than returned from the verify call, whose response the navigation replaces.",
+        "responses": {
+          "200": {
+            "description": "The report, or null.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/MergeReport"
+                        },
+                        {
+                          "type": [
+                            "object",
+                            "null"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cart/merge-report/dismiss": {
+      "post": {
+        "tags": [
+          "Cart"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Mark the merge report as seen.",
+        "responses": {
+          "204": {
+            "description": "Dismissed."
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cart/merge-report/undo": {
+      "post": {
+        "tags": [
+          "Cart"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Put the bag back the way it was before the merge.",
+        "description": "Restores the account’s own lines, which does discard what the guest cart contributed — that is what undoing a merge is. Available for seven days, once.",
+        "responses": {
+          "200": {
+            "description": "The restored bag.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Cart"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "That merge is too old to undo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already undone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/wishlist": {
+      "get": {
+        "tags": [
+          "Wishlist"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "The wishlist.",
+        "description": "Signed in only, on purpose: a wishlist promises to remember across devices and months, and a guest cookie can keep neither promise.",
+        "responses": {
+          "200": {
+            "description": "The list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WishlistEntry"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Wishlist"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Add a wish.",
+        "description": "Idempotent: wishing for the same thing twice is one wish.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "productId": {
+                    "type": "string",
+                    "pattern": "^[0-9a-fA-F]{24}$"
+                  },
+                  "variantId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^[0-9a-fA-F]{24}$"
+                  }
+                },
+                "required": [
+                  "productId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WishlistEntry"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The wishlist is full.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Wishlist"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Remove a wish.",
+        "description": "By body, not by path: a wish is a product plus an *optional* variant, and null is a meaningful value there rather than an omission.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "productId": {
+                    "type": "string",
+                    "pattern": "^[0-9a-fA-F]{24}$"
+                  },
+                  "variantId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^[0-9a-fA-F]{24}$"
+                  }
+                },
+                "required": [
+                  "productId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WishlistEntry"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
             "content": {
               "application/json": {
                 "schema": {
