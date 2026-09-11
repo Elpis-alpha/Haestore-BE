@@ -19,6 +19,11 @@ import {
 } from '../modules/catalog/product.schema.js';
 import { ATTRIBUTE_TYPES, FILTER_UIS } from '../modules/catalog/attribute-types.js';
 import {
+  capturePayPalSchema,
+  createCheckoutSchema,
+  reconcileSchema,
+} from '../modules/checkout/checkout.schema.js';
+import {
   requestCodeSchema,
   updateProfileSchema,
   verifyCodeSchema,
@@ -1140,5 +1145,234 @@ registry.registerPath({
       'The plan, or the updated product.',
     ),
     400: errors[400],
+  },
+});
+
+/* ---------------------------------------------------------------- checkout -- */
+
+const addressResponseSchema = registry.register(
+  'ShippingAddress',
+  z
+    .object({
+      name: z.string(),
+      line1: z.string(),
+      line2: z.string().optional(),
+      city: z.string(),
+      region: z.string().optional(),
+      postalCode: z.string().optional(),
+      country: z.string().length(2),
+      phone: z.string().optional(),
+    })
+    .openapi('ShippingAddress'),
+);
+
+const orderLineSchema = registry.register(
+  'OrderLine',
+  z
+    .object({
+      lineKey: z.string(),
+      productId: z.string(),
+      variantId: z.string(),
+      sku: z.string(),
+      title: z.string(),
+      slug: z.string(),
+      axisValues: z.array(z.object({ key: z.string(), value: z.string() })),
+      imagePublicId: z.string().optional(),
+      unitPrice: moneySchema.openapi({ description: 'Frozen at purchase. Never re-read.' }),
+      quantity: z.number().int(),
+      lineTotal: moneySchema.openapi({
+        description: 'Computed as unitPrice × quantity. Never stored — see CART.md.',
+      }),
+    })
+    .openapi('OrderLine'),
+);
+
+const orderSchema = registry.register(
+  'Order',
+  z
+    .object({
+      id: z.string(),
+      orderNumber: z.string().openapi({ example: 'HAE-8KDM2P4Q' }),
+      status: z.enum([
+        'pending_payment',
+        'paid',
+        'processing',
+        'shipped',
+        'delivered',
+        'canceled',
+        'refunded',
+      ]),
+      email: z.string(),
+      currency: z.string().length(3),
+      lines: z.array(orderLineSchema),
+      totals: z.object({ subtotal: moneySchema, grandTotal: moneySchema }).openapi({
+        description:
+          'grandTotal equals subtotal: this shop charges no delivery and no tax. The ' +
+          'breakdown exists so that every amount check reads grandTotal specifically, ' +
+          'and a shipping line added later changes one function rather than five.',
+      }),
+      shippingAddress: addressResponseSchema,
+      payment: z.object({
+        provider: z.enum(['stripe', 'paypal']),
+        paid: z.boolean(),
+      }),
+      itemCount: z.number().int(),
+      placedAt: z.string(),
+      paidAt: z.string().nullable(),
+      claimToken: z
+        .string()
+        .optional()
+        .openapi({
+          description:
+            'Returned exactly once, to a guest, in the response that created the order. ' +
+            'Only its HMAC is stored, so it can never be read back — keep it or lose access.',
+        }),
+    })
+    .openapi('Order'),
+);
+
+const idempotencyHeader = z.object({
+  'Idempotency-Key': z.string().openapi({
+    description:
+      'Required. A replay with a matching body replays the stored response; one still ' +
+      'in flight returns 409; the same key with a different body returns 422.',
+  }),
+});
+
+registry.registerPath({
+  tags: ['Checkout'],
+  method: 'post',
+  path: '/api/checkout/session',
+  summary: 'Turn the bag into an order and start a payment.',
+  description:
+    'Re-prices every line from live catalogue data, reserves stock and inserts the order ' +
+    'in one transaction, then creates the payment with the provider outside it. **The ' +
+    'client sends no amounts, ever** — there is no field in the request to put one in. ' +
+    'Works signed in or as a guest; a guest receives a one-time claimToken in the response.',
+  request: {
+    headers: idempotencyHeader,
+    body: { content: { 'application/json': { schema: createCheckoutSchema } } },
+  },
+  responses: {
+    201: json(
+      envelope(
+        z.object({
+          order: orderSchema,
+          stripe: z.object({ clientSecret: z.string().nullable() }).optional(),
+          paypal: z.object({ orderId: z.string() }).optional(),
+        }),
+      ),
+      'The order, and what the browser needs to pay for it.',
+    ),
+    400: errors[400],
+    404: json(errorSchema, 'There is no bag to check out.'),
+    409: json(errorSchema, 'A line is out of stock, or the key is still in flight.'),
+    422: errors[422],
+  },
+});
+
+registry.registerPath({
+  tags: ['Checkout'],
+  method: 'post',
+  path: '/api/checkout/paypal/capture',
+  summary: 'Capture an approved PayPal order, server-side.',
+  description:
+    'The client sends only the PayPal order id. Status, amount, currency and ownership ' +
+    'are all read from PayPal’s response to our own call, and **all five checks must ' +
+    'pass** — order COMPLETED, custom_id matches, capture COMPLETED, exact minor-unit ' +
+    'amount, matching currency. The 2022 app stored a payment blob the browser posted; ' +
+    'this route is its direct repair.',
+  request: {
+    headers: idempotencyHeader,
+    body: { content: { 'application/json': { schema: capturePayPalSchema } } },
+  },
+  responses: {
+    200: json(envelope(z.object({ order: orderSchema })), 'Captured and marked paid.'),
+    404: errors[404],
+    409: json(errorSchema, 'The payment could not be verified, or the order is already paid.'),
+  },
+});
+
+registry.registerPath({
+  tags: ['Checkout'],
+  method: 'post',
+  path: '/api/checkout/reconcile',
+  summary: 'Ask the provider what happened, and settle the order if it was paid.',
+  description:
+    'The return page’s path. Funnels into the same markOrderPaid the webhook calls, so ' +
+    'a purchase completes with **zero webhooks delivered** — which is what makes the ' +
+    'happy path testable on a laptop behind NAT. Safe to call repeatedly.',
+  request: { body: { content: { 'application/json': { schema: reconcileSchema } } } },
+  responses: {
+    200: json(
+      envelope(z.object({ order: orderSchema, reconciled: z.boolean() })),
+      'The order as it now stands.',
+    ),
+    404: errors[404],
+  },
+});
+
+registry.registerPath({
+  tags: ['Checkout'],
+  method: 'get',
+  path: '/api/checkout/order/{orderNumber}',
+  summary: 'Read one order, by session or by claim token.',
+  description:
+    'A bare order number authorises nothing and answers 404 — so it can be printed on a ' +
+    'packing slip without becoming a credential. A guest passes ?t=<claimToken> from ' +
+    'their confirmation email.',
+  request: {
+    params: z.object({ orderNumber: z.string() }),
+    query: z.object({ t: z.string().optional() }),
+  },
+  responses: {
+    200: json(envelope(z.object({ order: orderSchema })), 'The order.'),
+    404: errors[404],
+  },
+});
+
+registry.registerPath({
+  tags: ['Orders'],
+  method: 'get',
+  path: '/api/orders',
+  summary: 'The signed-in shopper’s order history.',
+  security: [{ sessionCookie: [] }],
+  request: {
+    query: z.object({
+      page: z.coerce.number().int().min(1).optional(),
+      perPage: z.coerce.number().int().min(1).max(60).optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: 'Newest first.',
+      content: {
+        'application/json': {
+          schema: z.object({
+            data: z.array(orderSchema),
+            page: z.object({
+              page: z.number().int(),
+              perPage: z.number().int(),
+              total: z.number().int(),
+              totalPages: z.number().int(),
+            }),
+          }),
+        },
+      },
+    },
+    401: errors[401],
+  },
+});
+
+registry.registerPath({
+  tags: ['Orders'],
+  method: 'get',
+  path: '/api/orders/{orderNumber}',
+  summary: 'One of the signed-in shopper’s own orders.',
+  security: [{ sessionCookie: [] }],
+  request: { params: z.object({ orderNumber: z.string() }) },
+  responses: {
+    200: json(envelope(z.object({ order: orderSchema })), 'The order.'),
+    404: errors[404],
   },
 });

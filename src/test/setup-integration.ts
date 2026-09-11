@@ -35,6 +35,18 @@ process.env.MEILISEARCH_INDEX_PREFIX = 'test_';
 // that exercise them; a background worker draining the outbox mid-assertion would make
 // every other test timing-dependent.
 process.env.SEARCH_INDEXING_ENABLED = 'false';
+// Same reasoning for the order worker: a sweeper cancelling an expired reservation
+// mid-assertion would make every checkout test timing-dependent. The tests that
+// exercise the sweep call it directly.
+process.env.ORDER_JOBS_ENABLED = 'false';
+// Payment providers are never reached from the integration suite — every test that
+// needs a provider response supplies one. These exist so config validation passes and
+// so a test that accidentally made a real call would fail loudly on a bad key rather
+// than quietly succeed against somebody's live account.
+process.env.STRIPE_SECRET_KEY = 'sk_test_integration_suite_does_not_call_stripe';
+process.env.STRIPE_WEBHOOK_SECRET = 'whsec_integration_suite_signing_secret_0000000000';
+process.env.PAYPAL_CLIENT_ID = 'integration_suite_paypal_client_id';
+process.env.PAYPAL_CLIENT_SECRET = 'integration_suite_paypal_client_secret';
 
 let replSet: MongoMemoryReplSet;
 

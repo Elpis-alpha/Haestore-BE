@@ -37,6 +37,12 @@ const envSchema = z.object({
   // the CSRF defence that pairs with SameSite=Lax, so it has no default.
   ALLOWED_ORIGINS: csv,
   PUBLIC_URL: z.url().default('http://localhost:5000'),
+  /**
+   * Where the storefront lives. Distinct from PUBLIC_URL, which is this API — the two
+   * are different origins by design (ADR-001), and a payment provider redirecting the
+   * shopper back needs the one with pages on it, not the one with JSON.
+   */
+  WEB_URL: z.url().default('http://localhost:3000'),
 
   // ---- Datastores (required — the API is useless without them) -----------
   // Must carry directConnection=true against a single-node replica set. See ADR-002.
@@ -63,6 +69,15 @@ const envSchema = z.object({
   // enqueued with this delay under a fixed job id, so re-enqueuing while one is
   // already waiting is a no-op. See ADR-003 and docs/SEARCH.md.
   SEARCH_SETTINGS_DEBOUNCE_MS: z.coerce.number().int().min(0).default(30_000),
+
+  // The order worker drains the order outbox into email and sweeps expired stock
+  // reservations. Both are idempotent, so several replicas running them is wasteful
+  // rather than wrong — but a test process must not sweep mid-assertion.
+  ORDER_JOBS_ENABLED: z
+    .stringbool()
+    .default(true)
+    .describe('Run the order mail drain and the reservation sweeper in this process.'),
+  ORDER_SWEEP_INTERVAL_MS: z.coerce.number().int().min(1_000).default(60_000),
 
   // ---- Auth --------------------------------------------------------------
   // Server-side pepper for OTP hashing. Never stored in Redis, which is what makes a
@@ -114,6 +129,21 @@ const envSchema = z.object({
   PAYPAL_CLIENT_ID: z.string().optional(),
   PAYPAL_CLIENT_SECRET: z.string().optional(),
   PAYPAL_ENV: z.enum(['sandbox', 'live']).default('sandbox'),
+  /**
+   * Issued when the webhook is registered in the PayPal dashboard, and required to
+   * verify one — PayPal signs with a certificate chain and verification is a call back
+   * to them, which needs to name the webhook being verified. Absent, the PayPal webhook
+   * route refuses rather than trusting an unverified event; the return-page reconcile
+   * reaches the same `markOrderPaid` without it, which is why the demo does not need it.
+   */
+  PAYPAL_WEBHOOK_ID: z.string().optional(),
+
+  /**
+   * How long an unpaid order holds its stock reservation. The sweeper cancels past it
+   * and returns the stock to the shelf. Long enough to finish a card payment on a bad
+   * connection, short enough that an abandoned checkout does not keep the shop sold out.
+   */
+  CHECKOUT_RESERVATION_MINUTES: z.coerce.number().int().positive().default(30),
 });
 
 export type Env = z.infer<typeof envSchema>;

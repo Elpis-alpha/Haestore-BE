@@ -1,6 +1,5 @@
 import mongoose from 'mongoose';
 import { badRequest, conflict, notFound } from '../../lib/errors.js';
-import { logger } from '../../lib/logger.js';
 import { Product } from '../catalog/product.model.js';
 import { Cart, type CartDoc } from './cart.model.js';
 import { lineKeyOf } from './line-key.js';
@@ -521,15 +520,8 @@ function toStored(line: CartLine) {
 }
 
 /**
- * Attaches a guest's prior orders to the account, on sign-in.
- *
- * Placed here rather than in Phase 7 because it belongs to the same hook — the moment a
- * guest becomes a person is the moment both their cart and their history change hands.
- * The Order model does not exist yet, so this is a no-op that logs; Phase 7 fills it in.
- *
- * It is safe precisely *because* authentication is an emailed code: possession of the
- * code is a strictly stronger claim on the address than the guest token ever was.
+ * Guest order claiming moved to `order/order.service.ts` in Phase 7, where the Order
+ * model lives. The Phase 6 placeholder that stood here logged and returned; the hook it
+ * was holding open is still the same one — the moment a guest becomes a person is the
+ * moment both their cart and their history change hands.
  */
-export function claimGuestOrders(userId: string, email: string): void {
-  logger.debug({ userId, email }, 'cart: guest order claim is a Phase 7 concern');
-}

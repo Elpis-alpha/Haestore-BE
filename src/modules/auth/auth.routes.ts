@@ -29,7 +29,8 @@ import {
   readGuestCookie,
   setMergeFlag,
 } from '../cart/guest-cookie.js';
-import { claimGuestOrders, mergeGuestCart } from '../cart/cart.service.js';
+import { mergeGuestCart } from '../cart/cart.service.js';
+import { claimGuestOrders } from '../order/order.service.js';
 import { logger } from '../../lib/logger.js';
 
 export const authRouter: Router = Router();
@@ -109,7 +110,16 @@ authRouter.post('/otp/verify', validateBody(verifyCodeSchema), async (req, res) 
   // rather than asking on every visit and being told "no" almost every time.
   if (merged) setMergeFlag(res, true);
 
-  claimGuestOrders(String(user._id), user.email);
+  /**
+   * Prior guest orders for this address become theirs.
+   *
+   * Awaited but never fatal, on the same argument as the merge above: the person has
+   * proved who they are, and a failure here must not cost them the sign-in. The orders
+   * stay unclaimed and the next sign-in picks them up.
+   */
+  await claimGuestOrders(String(user._id), user.email).catch((err: Error) =>
+    logger.error({ err: err.message }, 'auth: prior guest orders could not be claimed'),
+  );
 
   // `mergeReport` says only whether there is one to fetch. The report itself is read
   // from /api/cart/merge-report by the page the shopper lands on, because this response

@@ -13,6 +13,9 @@ import { adminCatalogRouter } from './modules/catalog/admin-catalog.routes.js';
 import { authRouter } from './modules/auth/auth.routes.js';
 import { devOutboxRouter } from './modules/auth/dev-outbox.routes.js';
 import { cartRouter } from './modules/cart/cart.routes.js';
+import { checkoutRouter } from './modules/checkout/checkout.routes.js';
+import { orderRouter } from './modules/order/order.routes.js';
+import { webhooksRouter } from './modules/payments/webhooks.routes.js';
 import { wishlistRouter } from './modules/wishlist/wishlist.routes.js';
 import { attachSession } from './middleware/session.js';
 import './middleware/auth-context.js';
@@ -31,13 +34,17 @@ export function createApp(): Express {
   // ---------------------------------------------------------------------------
   // ORDER IS LOAD-BEARING BELOW THIS LINE.
   //
-  // Payment webhooks mount here in Phase 7, BEFORE express.json(), because signature
-  // verification needs the exact raw bytes. A JSON parser that has already consumed
-  // and re-serialised the body invalidates every signature, and the resulting 400s
-  // from Stripe look like a credentials problem rather than a parsing one.
+  // Payment webhooks mount HERE, BEFORE express.json(), because signature verification
+  // needs the exact raw bytes. A JSON parser that has already consumed and re-serialised
+  // the body invalidates every signature, and the resulting 400s from Stripe look like a
+  // credentials problem rather than a parsing one. There is a regression test for this
+  // in stripe.test.ts: a body round-tripped through JSON.parse/stringify does not verify.
   //
-  //   app.use('/api/webhooks/stripe', express.raw({ type: 'application/json' }), stripeWebhook);
+  // They also mount ABOVE originGuard and attachSession deliberately. A webhook carries
+  // no Origin header and no session cookie — it is authenticated by its signature and by
+  // nothing else — so passing it through either would reject every delivery.
   // ---------------------------------------------------------------------------
+  app.use('/api/webhooks', express.raw({ type: '*/*', limit: '1mb' }), webhooksRouter);
 
   app.use(compression());
   // 1 MB, not the 2022 app's 20 MB applied globally and unauthenticated. Image uploads
@@ -73,6 +80,12 @@ export function createApp(): Express {
   // a guest"; the wishlist router mounts requireSession once at its own top.
   app.use('/api/cart', cartRouter);
   app.use('/api/wishlist', wishlistRouter);
+  // Checkout is not a guard either: guest checkout is a first-class path, and an order
+  // is attached to an account later if one is ever created for that address. The order
+  // router does mount requireSession at its own top — order history belongs to accounts,
+  // and a guest reads their one order through the checkout router's claim-token route.
+  app.use('/api/checkout', checkoutRouter);
+  app.use('/api/orders', orderRouter);
   // Every admin router is gated inside itself by requireRole, mounted once at the top
   // of the router rather than per handler.
   app.use('/api/admin/catalog', adminCatalogRouter);

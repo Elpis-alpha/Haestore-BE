@@ -9,6 +9,7 @@ import { ensureProductsIndex, handleSearchJob } from './search/indexer.js';
 import { startSearchWorker, stopSearchWorker, enqueueSettingsSync } from './search/queue.js';
 import { startOutboxRelay, stopOutboxRelay } from './search/relay.js';
 import { startReconciliation, stopReconciliation } from './search/reconcile.js';
+import { startOrderWorker, stopOrderWorker } from './modules/order/order-jobs.js';
 import { verifyMailTransport } from './mail/transport.js';
 
 async function main(): Promise<void> {
@@ -46,6 +47,11 @@ async function main(): Promise<void> {
     logger.error({ err: err.message }, 'search: outbox relay failed to start'),
   );
   startReconciliation();
+
+  // Drains the order outbox into receipts and returns stock from checkouts that were
+  // never paid for. Started unconditionally for the same reason as the search relay: an
+  // outage must not turn into a permanent backlog nobody drains.
+  startOrderWorker();
 
   /**
    * Mail is checked, loudly, and **never fatally**.
@@ -96,7 +102,7 @@ async function main(): Promise<void> {
       // Search first: the relay holds a change stream and the worker holds jobs, and
       // both need Mongo and Redis alive to shut down cleanly.
       stopReconciliation();
-      await Promise.allSettled([stopOutboxRelay(), stopSearchWorker()]);
+      await Promise.allSettled([stopOutboxRelay(), stopSearchWorker(), stopOrderWorker()]);
       await Promise.allSettled([disconnectMongo(), disconnectRedis()]);
 
       clearTimeout(forced);

@@ -1203,6 +1203,228 @@
           "addedAt"
         ],
         "description": "Nothing about price or stock is stored on a wish — it is read live, because a wishlist is looked at weeks after it is written."
+      },
+      "ShippingAddress": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "line1": {
+            "type": "string"
+          },
+          "line2": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "postalCode": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 2
+          },
+          "phone": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "line1",
+          "city",
+          "country"
+        ]
+      },
+      "OrderLine": {
+        "type": "object",
+        "properties": {
+          "lineKey": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "variantId": {
+            "type": "string"
+          },
+          "sku": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "axisValues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key",
+                "value"
+              ]
+            }
+          },
+          "imagePublicId": {
+            "type": "string"
+          },
+          "unitPrice": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              },
+              {
+                "description": "Frozen at purchase. Never re-read."
+              }
+            ]
+          },
+          "quantity": {
+            "type": "integer"
+          },
+          "lineTotal": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              },
+              {
+                "description": "Computed as unitPrice × quantity. Never stored — see CART.md."
+              }
+            ]
+          }
+        },
+        "required": [
+          "lineKey",
+          "productId",
+          "variantId",
+          "sku",
+          "title",
+          "slug",
+          "axisValues",
+          "unitPrice",
+          "quantity",
+          "lineTotal"
+        ]
+      },
+      "Order": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "orderNumber": {
+            "type": "string",
+            "example": "HAE-8KDM2P4Q"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending_payment",
+              "paid",
+              "processing",
+              "shipped",
+              "delivered",
+              "canceled",
+              "refunded"
+            ]
+          },
+          "email": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 3
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderLine"
+            }
+          },
+          "totals": {
+            "type": "object",
+            "properties": {
+              "subtotal": {
+                "$ref": "#/components/schemas/Money"
+              },
+              "grandTotal": {
+                "$ref": "#/components/schemas/Money"
+              }
+            },
+            "required": [
+              "subtotal",
+              "grandTotal"
+            ],
+            "description": "grandTotal equals subtotal: this shop charges no delivery and no tax. The breakdown exists so that every amount check reads grandTotal specifically, and a shipping line added later changes one function rather than five."
+          },
+          "shippingAddress": {
+            "$ref": "#/components/schemas/ShippingAddress"
+          },
+          "payment": {
+            "type": "object",
+            "properties": {
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "stripe",
+                  "paypal"
+                ]
+              },
+              "paid": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "provider",
+              "paid"
+            ]
+          },
+          "itemCount": {
+            "type": "integer"
+          },
+          "placedAt": {
+            "type": "string"
+          },
+          "paidAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "claimToken": {
+            "type": "string",
+            "description": "Returned exactly once, to a guest, in the response that created the order. Only its HMAC is stored, so it can never be read back — keep it or lose access."
+          }
+        },
+        "required": [
+          "id",
+          "orderNumber",
+          "status",
+          "email",
+          "currency",
+          "lines",
+          "totals",
+          "shippingAddress",
+          "payment",
+          "itemCount",
+          "placedAt",
+          "paidAt"
+        ]
       }
     },
     "parameters": {},
@@ -4486,6 +4708,582 @@
           },
           "400": {
             "description": "The request was malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/checkout/session": {
+      "post": {
+        "tags": [
+          "Checkout"
+        ],
+        "summary": "Turn the bag into an order and start a payment.",
+        "description": "Re-prices every line from live catalogue data, reserves stock and inserts the order in one transaction, then creates the payment with the provider outside it. **The client sends no amounts, ever** — there is no field in the request to put one in. Works signed in or as a guest; a guest receives a one-time claimToken in the response.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Required. A replay with a matching body replays the stored response; one still in flight returns 409; the same key with a different body returns 422."
+            },
+            "required": true,
+            "description": "Required. A replay with a matching body replays the stored response; one still in flight returns 409; the same key with a different body returns 422.",
+            "name": "Idempotency-Key",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "maxLength": 254,
+                    "format": "email"
+                  },
+                  "shippingAddress": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                      },
+                      "line1": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "line2": {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      "city": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                      },
+                      "region": {
+                        "type": "string",
+                        "maxLength": 120
+                      },
+                      "postalCode": {
+                        "type": "string",
+                        "maxLength": 32
+                      },
+                      "country": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 2
+                      },
+                      "phone": {
+                        "type": "string",
+                        "maxLength": 40
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "line1",
+                      "city",
+                      "country"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "provider": {
+                    "type": "string",
+                    "enum": [
+                      "stripe",
+                      "paypal"
+                    ]
+                  }
+                },
+                "required": [
+                  "email",
+                  "shippingAddress",
+                  "provider"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The order, and what the browser needs to pay for it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "order": {
+                          "$ref": "#/components/schemas/Order"
+                        },
+                        "stripe": {
+                          "type": "object",
+                          "properties": {
+                            "clientSecret": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "clientSecret"
+                          ]
+                        },
+                        "paypal": {
+                          "type": "object",
+                          "properties": {
+                            "orderId": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "orderId"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "order"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "There is no bag to check out.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A line is out of stock, or the key is still in flight.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The body failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/checkout/paypal/capture": {
+      "post": {
+        "tags": [
+          "Checkout"
+        ],
+        "summary": "Capture an approved PayPal order, server-side.",
+        "description": "The client sends only the PayPal order id. Status, amount, currency and ownership are all read from PayPal’s response to our own call, and **all five checks must pass** — order COMPLETED, custom_id matches, capture COMPLETED, exact minor-unit amount, matching currency. The 2022 app stored a payment blob the browser posted; this route is its direct repair.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Required. A replay with a matching body replays the stored response; one still in flight returns 409; the same key with a different body returns 422."
+            },
+            "required": true,
+            "description": "Required. A replay with a matching body replays the stored response; one still in flight returns 409; the same key with a different body returns 422.",
+            "name": "Idempotency-Key",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "paypalOrderId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  }
+                },
+                "required": [
+                  "paypalOrderId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Captured and marked paid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "order": {
+                          "$ref": "#/components/schemas/Order"
+                        }
+                      },
+                      "required": [
+                        "order"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The payment could not be verified, or the order is already paid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/checkout/reconcile": {
+      "post": {
+        "tags": [
+          "Checkout"
+        ],
+        "summary": "Ask the provider what happened, and settle the order if it was paid.",
+        "description": "The return page’s path. Funnels into the same markOrderPaid the webhook calls, so a purchase completes with **zero webhooks delivered** — which is what makes the happy path testable on a laptop behind NAT. Safe to call repeatedly.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "orderNumber": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32
+                  },
+                  "claimToken": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                },
+                "required": [
+                  "orderNumber"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The order as it now stands.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "order": {
+                          "$ref": "#/components/schemas/Order"
+                        },
+                        "reconciled": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "order",
+                        "reconciled"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/checkout/order/{orderNumber}": {
+      "get": {
+        "tags": [
+          "Checkout"
+        ],
+        "summary": "Read one order, by session or by claim token.",
+        "description": "A bare order number authorises nothing and answers 404 — so it can be printed on a packing slip without becoming a credential. A guest passes ?t=<claimToken> from their confirmation email.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "orderNumber",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "t",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The order.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "order": {
+                          "$ref": "#/components/schemas/Order"
+                        }
+                      },
+                      "required": [
+                        "order"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/orders": {
+      "get": {
+        "tags": [
+          "Orders"
+        ],
+        "summary": "The signed-in shopper’s order history.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 60
+            },
+            "required": false,
+            "name": "perPage",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Order"
+                      }
+                    },
+                    "page": {
+                      "type": "object",
+                      "properties": {
+                        "page": {
+                          "type": "integer"
+                        },
+                        "perPage": {
+                          "type": "integer"
+                        },
+                        "total": {
+                          "type": "integer"
+                        },
+                        "totalPages": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "page",
+                        "perPage",
+                        "total",
+                        "totalPages"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "page"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/orders/{orderNumber}": {
+      "get": {
+        "tags": [
+          "Orders"
+        ],
+        "summary": "One of the signed-in shopper’s own orders.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "orderNumber",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The order.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "order": {
+                          "$ref": "#/components/schemas/Order"
+                        }
+                      },
+                      "required": [
+                        "order"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
             "content": {
               "application/json": {
                 "schema": {
