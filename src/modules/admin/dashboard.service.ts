@@ -2,6 +2,8 @@ import { Order } from '../order/order.model.js';
 import { STUCK_PAYMENT_AFTER_MS } from '../order/admin-order.presenter.js';
 import { Product } from '../catalog/product.model.js';
 import { StorefrontLayout } from '../storefront/storefront.model.js';
+import { Review } from '../review/review.model.js';
+import { SupportTicket } from '../support/support-ticket.model.js';
 
 const PAID_STATES = ['paid', 'processing', 'shipped', 'delivered'];
 const REVENUE_WINDOW_DAYS = 30;
@@ -37,6 +39,10 @@ export async function dashboardSummary(now = new Date()) {
     revenue,
     draft,
     published,
+    waitingCount,
+    waiting,
+    unreadReviewCount,
+    unreadReviews,
   ] = await Promise.all([
     Order.countDocuments({ status: { $in: ['paid', 'processing'] } }),
     Order.countDocuments(stuckFilter),
@@ -95,7 +101,29 @@ export async function dashboardSummary(now = new Date()) {
     StorefrontLayout.findOne({ handle: 'home', status: 'published' })
       .select('version publishedAt')
       .lean(),
+    // Conversations the shop owes a reply on, longest-waiting first. `{status, lastMessageAt}`.
+    SupportTicket.countDocuments({ status: 'open' }),
+    SupportTicket.find({ status: 'open' })
+      .sort({ lastMessageAt: 1, _id: 1 })
+      .limit(5)
+      .select('reference subject email lastMessageAt')
+      .lean(),
+    // Published reviews nobody behind the counter has read. The partial `needsReview` index.
+    Review.countDocuments({ needsReview: true }),
+    Review.find({ needsReview: true })
+      .sort({ createdAt: 1, _id: 1 })
+      .limit(5)
+      .select('product rating authorName createdAt status')
+      .lean(),
   ]);
+
+  const reviewedTitles = new Map(
+    (
+      await Product.find({ _id: { $in: unreadReviews.map((r) => r.product) } })
+        .select('title')
+        .lean()
+    ).map((p) => [String(p._id), p.title]),
+  );
 
   return {
     orders: {
@@ -140,6 +168,32 @@ export async function dashboardSummary(now = new Date()) {
         amount: row.amount,
         orders: row.orders,
       })),
+    },
+    support: {
+      waiting: {
+        count: waitingCount,
+        oldest: waiting.map((ticket) => ({
+          id: String(ticket._id),
+          reference: ticket.reference,
+          subject: ticket.subject,
+          email: ticket.email,
+          waitingSince: ticket.lastMessageAt.toISOString(),
+        })),
+      },
+    },
+    reviews: {
+      unread: {
+        count: unreadReviewCount,
+        oldest: unreadReviews.map((review) => ({
+          id: String(review._id),
+          productId: String(review.product),
+          productTitle: reviewedTitles.get(String(review.product)) ?? 'A product no longer listed',
+          rating: review.rating,
+          authorName: review.authorName,
+          hidden: review.status === 'hidden',
+          postedAt: review.createdAt.toISOString(),
+        })),
+      },
     },
     storefront: {
       publishedVersion: published?.version ?? null,

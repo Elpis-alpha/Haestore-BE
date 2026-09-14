@@ -189,6 +189,9 @@ export async function releaseAll(
   }
 }
 
+/** A consumption that found fewer units on the shelf, or held, than the order shipped. */
+export type ConsumeShortfall = ReservationRequest & { onHand: number; reserved: number };
+
 /**
  * Turns fulfilment into a permanent stock reduction.
  *
@@ -196,22 +199,86 @@ export async function releaseAll(
  * the building: `onHand` and `reserved` both come down, `available` is untouched
  * because the hold already took it out. This is the one place `onHand` moves outside of
  * an admin correction.
+ *
+ * **Floored at zero, and the floor is in the filter.** An admin who counts the shelf and
+ * corrects `onHand` below what paid orders already hold is recording the truth, and the
+ * correction is allowed. But `$inc` does not run the schema's `min: 0`, so shipping one of
+ * those orders used to drive `onHand` negative — and a product holding a negative count
+ * then failed validation on its next save, which locked the admin out of editing the one
+ * product that most needed a correction. So the ordinary decrement only matches when both
+ * counters can afford it; otherwise the shortfall path sets the counters to what is left,
+ * never below zero, and reports it. Shipping is never refused for a bookkeeping error: the
+ * parcel is already in someone's hands.
+ *
+ * Call it inside a transaction. The shortfall path reads before it writes, and a
+ * transaction's write conflict is what makes that safe against a concurrent change.
  */
 export async function consumeAll(
   requests: ReservationRequest[],
   session?: ClientSession,
-): Promise<void> {
+): Promise<ConsumeShortfall[]> {
+  const shortfalls: ConsumeShortfall[] = [];
+
   for (const request of requests) {
+    const productId = new mongoose.Types.ObjectId(request.productId);
     const variantId = new mongoose.Types.ObjectId(request.variantId);
-    await Product.findOneAndUpdate(
-      { _id: new mongoose.Types.ObjectId(request.productId), 'variants._id': variantId },
+    const options = { arrayFilters: [{ 'v._id': variantId }], ...(session ? { session } : {}) };
+
+    const consumed = await Product.findOneAndUpdate(
+      {
+        _id: productId,
+        variants: {
+          $elemMatch: {
+            _id: variantId,
+            'stock.onHand': { $gte: request.quantity },
+            'stock.reserved': { $gte: request.quantity },
+          },
+        },
+      },
       {
         $inc: {
           'variants.$[v].stock.onHand': -request.quantity,
           'variants.$[v].stock.reserved': -request.quantity,
         },
       },
-      { arrayFilters: [{ 'v._id': variantId }], ...(session ? { session } : {}) },
+      { ...options, projection: { _id: 1 } },
+    );
+    if (consumed) continue;
+
+    const read = Product.findOne({ _id: productId, 'variants._id': variantId }).select({
+      'variants.$': 1,
+    });
+    if (session) read.session(session);
+    const stock = (await read.lean())?.variants[0]?.stock;
+    if (!stock) {
+      logger.error({ ...request }, 'reservation: could not consume, variant not found');
+      continue;
+    }
+
+    const onHand = Math.max(0, stock.onHand - request.quantity);
+    const reserved = Math.max(0, stock.reserved - request.quantity);
+    await Product.updateOne(
+      { _id: productId, 'variants._id': variantId },
+      {
+        $set: {
+          'variants.$[v].stock.onHand': onHand,
+          'variants.$[v].stock.reserved': reserved,
+          // Never raised by a shipment, and never above what is now on the shelf unheld.
+          'variants.$[v].stock.available': Math.min(
+            stock.available,
+            Math.max(0, onHand - reserved),
+          ),
+        },
+      },
+      options,
+    );
+
+    shortfalls.push({ ...request, onHand: stock.onHand, reserved: stock.reserved });
+    logger.warn(
+      { ...request, onHand: stock.onHand, reserved: stock.reserved },
+      'reservation: shipped more than the shelf count held; stock floored at zero',
     );
   }
+
+  return shortfalls;
 }

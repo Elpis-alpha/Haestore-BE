@@ -18,6 +18,8 @@ import { orderRouter } from './modules/order/order.routes.js';
 import { webhooksRouter } from './modules/payments/webhooks.routes.js';
 import { wishlistRouter } from './modules/wishlist/wishlist.routes.js';
 import { storefrontRouter } from './modules/storefront/storefront.routes.js';
+import { reviewRouter } from './modules/review/review.routes.js';
+import { supportRouter } from './modules/support/support.routes.js';
 import { attachSession } from './middleware/session.js';
 import './middleware/auth-context.js';
 
@@ -89,6 +91,11 @@ export function createApp(): Express {
   app.use('/api/orders', orderRouter);
   // The composed front page. Public, and only ever the published version.
   app.use('/api/storefront', storefrontRouter);
+  // Both mount requireSession at their own top. A product's reviews are read publicly
+  // through the catalogue router; writing one, and every support conversation, belongs to
+  // an account.
+  app.use('/api/reviews', reviewRouter);
+  app.use('/api/support', supportRouter);
   // Every admin route sits under one router, which applies requireRole and the audit
   // middleware once for all of them. See modules/admin/admin.routes.ts.
   app.use('/api/admin', adminRouter);

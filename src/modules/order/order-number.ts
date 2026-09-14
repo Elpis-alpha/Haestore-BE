@@ -16,13 +16,14 @@ import { env, requireConfigured } from '../../config/env.js';
  * to read out to support.
  */
 
-const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+/** Also the alphabet of support references, which are read aloud for the same reasons. */
+export const CROCKFORD_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 const LENGTH = 8;
 
 export function generateOrderNumber(): string {
   let body = '';
   for (let i = 0; i < LENGTH; i += 1) {
-    body += ALPHABET[randomInt(ALPHABET.length)];
+    body += CROCKFORD_ALPHABET[randomInt(CROCKFORD_ALPHABET.length)];
   }
   return `HAE-${body}`;
 }

@@ -23,13 +23,35 @@ import { registerModel } from '../../db/register-model.js';
  * certain; the post-commit enqueue only makes it quick.
  */
 
-export const ORDER_OUTBOX_KINDS = ['order-confirmation', 'order-canceled'] as const;
+export const ORDER_OUTBOX_KINDS = [
+  'order-confirmation',
+  'order-canceled',
+  'support-reply',
+] as const;
 export type OrderOutboxKind = (typeof ORDER_OUTBOX_KINDS)[number];
 
+/**
+ * `support-reply` is the one kind that is not about an order, and it lives here rather than
+ * in an outbox of its own on purpose. It is the only other email the shop sends a customer
+ * as a consequence of something committed — a reply from behind the counter — and it has
+ * exactly the property this outbox exists for: the reply must not be saved without the
+ * notification, or sent for a reply that rolled back. A second collection would be a second
+ * sweep, a second TTL and a second place to look when someone asks "did they get it?".
+ */
 const orderOutboxSchema = new Schema(
   {
     kind: { type: String, required: true, enum: ORDER_OUTBOX_KINDS },
-    order: { type: Schema.Types.ObjectId, ref: 'Order', required: true },
+    order: {
+      type: Schema.Types.ObjectId,
+      ref: 'Order',
+      default: null,
+      required: function (this: { kind?: string }) {
+        return this.kind !== 'support-reply';
+      },
+    },
+    /** For `support-reply`: the conversation, and which message in it to send. */
+    ticket: { type: Schema.Types.ObjectId, ref: 'SupportTicket', default: null },
+    messageId: { type: Schema.Types.ObjectId, default: null },
 
     processedAt: { type: Date, default: null },
     attempts: { type: Number, required: true, default: 0 },
@@ -73,4 +95,15 @@ export async function appendOrderOutbox(
   }));
   if (rows.length === 0) return;
   await OrderOutbox.insertMany(rows, { session, ordered: false });
+}
+
+/** Appends a reply notification, in the transaction that saved the reply. */
+export async function appendSupportOutbox(
+  session: ClientSession,
+  entry: { ticketId: unknown; messageId: unknown },
+): Promise<void> {
+  await OrderOutbox.insertMany(
+    [{ kind: 'support-reply', ticket: entry.ticketId, messageId: entry.messageId }],
+    { session },
+  );
 }

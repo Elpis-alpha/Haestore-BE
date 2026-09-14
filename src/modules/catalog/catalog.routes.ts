@@ -1,9 +1,12 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { badRequest, notFound } from '../../lib/errors.js';
-import { param } from '../../middleware/validate.js';
+import { param, query, validateQuery } from '../../middleware/validate.js';
+import { publicReviewQuerySchema, type PublicReviewQuery } from '../review/review.schema.js';
+import { listPublicReviews } from '../review/review.service.js';
 import { isFilterableType } from './attribute-types.js';
 import { Category } from './category.model.js';
+import { Product } from './product.model.js';
 import { getCategoryByPath } from './category.service.js';
 import { getProductBySlug } from './product.service.js';
 import {
@@ -235,6 +238,59 @@ catalogRouter.get('/products/:slug', async (req, res) => {
       // Internal review state is never part of a public response.
       validationIssues: undefined,
       needsAttention: undefined,
+    },
+  });
+});
+
+/**
+ * A product's published reviews, with the summary above them.
+ *
+ * Public, and here rather than on the review router, because it is catalogue data read
+ * beside the product it belongs to. Only an active product's reviews are readable: a draft
+ * has no page for them to appear on.
+ */
+catalogRouter.get(
+  '/products/:slug/reviews',
+  validateQuery(publicReviewQuerySchema),
+  async (req, res) => {
+    res.json(await listPublicReviews(param(req, 'slug'), query<PublicReviewQuery>(req)));
+  },
+);
+
+/**
+ * The sitemap protocol's per-file ceiling. A shop this size is nowhere near it; the limit is
+ * here so the day it is, the sitemap is truncated visibly rather than refused by every
+ * search engine for being oversized.
+ */
+const SITEMAP_LIMIT = 50_000;
+
+/**
+ * Everything a crawler should index, and nothing else: live shelves and live products.
+ *
+ * **Never a filter combination.** A shelf with boxes ticked is one of thousands of
+ * near-identical pages the listing already marks `noindex`, and putting one in a sitemap
+ * would contradict that on the one page search engines read as the shop's own statement of
+ * what matters. A projection of two fields per document, because it is read by a job that
+ * wants URLs and dates.
+ */
+catalogRouter.get('/sitemap', async (_req, res) => {
+  const [categories, products] = await Promise.all([
+    Category.find({ status: 'active' })
+      .select('path updatedAt')
+      .sort({ path: 1, _id: 1 })
+      .limit(SITEMAP_LIMIT)
+      .lean(),
+    Product.find({ status: 'active' })
+      .select('slug updatedAt')
+      .sort({ _id: 1 })
+      .limit(SITEMAP_LIMIT)
+      .lean(),
+  ]);
+
+  res.json({
+    data: {
+      categories: categories.map((c) => ({ path: c.path, updatedAt: c.updatedAt.toISOString() })),
+      products: products.map((p) => ({ slug: p.slug, updatedAt: p.updatedAt.toISOString() })),
     },
   });
 });

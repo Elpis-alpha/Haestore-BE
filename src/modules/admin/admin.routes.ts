@@ -5,6 +5,8 @@ import { adminCatalogRouter } from '../catalog/admin-catalog.routes.js';
 import { adminCustomerRouter } from '../customer/admin-customer.routes.js';
 import { adminOrderRouter } from '../order/admin-order.routes.js';
 import { adminStorefrontRouter } from '../storefront/storefront.routes.js';
+import { adminReviewRouter } from '../review/review.routes.js';
+import { adminSupportRouter } from '../support/support.routes.js';
 import { auditAdminMutations, auditQuerySchema, listAudit } from './audit.js';
 import { dashboardSummary } from './dashboard.service.js';
 
@@ -38,3 +40,5 @@ adminRouter.use('/catalog', adminCatalogRouter);
 adminRouter.use('/orders', adminOrderRouter);
 adminRouter.use('/customers', adminCustomerRouter);
 adminRouter.use('/storefront', adminStorefrontRouter);
+adminRouter.use('/reviews', adminReviewRouter);
+adminRouter.use('/support', adminSupportRouter);

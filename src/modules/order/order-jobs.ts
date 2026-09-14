@@ -3,10 +3,12 @@ import { redis } from '../../cache/redis.js';
 import { env } from '../../config/env.js';
 import { logger } from '../../lib/logger.js';
 import { Order } from './order.model.js';
-import { OrderOutbox, type OrderOutboxKind } from './order-outbox.model.js';
+import { OrderOutbox, type OrderOutboxDoc } from './order-outbox.model.js';
 import { releaseReservation } from './order.service.js';
 import { transition } from './order.service.js';
 import { sendOrderConfirmation } from './order.mail.js';
+import { SupportTicket } from '../support/support-ticket.model.js';
+import { sendSupportReply } from '../support/support.mail.js';
 
 /**
  * The two background jobs the checkout needs.
@@ -104,7 +106,7 @@ export async function sweepOrderOutbox(): Promise<number> {
 
   for (const row of rows) {
     try {
-      await deliver(row.kind, String(row.order));
+      await deliver(row);
       await OrderOutbox.updateOne({ _id: row._id }, { $set: { processedAt: new Date() } });
       sent += 1;
     } catch (err) {
@@ -122,10 +124,19 @@ export async function sweepOrderOutbox(): Promise<number> {
   return sent;
 }
 
-async function deliver(kind: OrderOutboxKind, orderId: string): Promise<void> {
-  const order = await Order.findById(orderId);
+async function deliver(row: OrderOutboxDoc): Promise<void> {
+  if (row.kind === 'support-reply') {
+    const ticket = await SupportTicket.findById(row.ticket);
+    // The message is named, not "the latest", so two replies sent a minute apart are two
+    // emails with two different bodies rather than the second one twice.
+    const message = ticket?.messages.find((m) => String(m._id) === String(row.messageId));
+    if (ticket && message) await sendSupportReply(ticket, message);
+    return;
+  }
+
+  const order = await Order.findById(row.order);
   if (!order) return;
-  if (kind === 'order-confirmation') await sendOrderConfirmation(order);
+  if (row.kind === 'order-confirmation') await sendOrderConfirmation(order);
 }
 
 async function handleOrderJob(job: Job<OrderJob>): Promise<void> {
@@ -139,7 +150,7 @@ async function handleOrderJob(job: Job<OrderJob>): Promise<void> {
   // the loser doing nothing is the correct outcome.
   if (!row || row.processedAt) return;
 
-  await deliver(row.kind, String(row.order));
+  await deliver(row);
   await OrderOutbox.updateOne({ _id: row._id }, { $set: { processedAt: new Date() } });
 }
 

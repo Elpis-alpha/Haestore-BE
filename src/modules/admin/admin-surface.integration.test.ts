@@ -7,6 +7,8 @@ import { adminCatalogRouter } from '../catalog/admin-catalog.routes.js';
 import { adminCustomerRouter } from '../customer/admin-customer.routes.js';
 import { adminOrderRouter } from '../order/admin-order.routes.js';
 import { adminStorefrontRouter } from '../storefront/storefront.routes.js';
+import { adminReviewRouter } from '../review/review.routes.js';
+import { adminSupportRouter } from '../support/support.routes.js';
 import { adminRouter } from './admin.routes.js';
 import { AdminAudit } from './audit.model.js';
 
@@ -34,6 +36,8 @@ const MOUNTS: [string, Router][] = [
   ['/orders', adminOrderRouter],
   ['/customers', adminCustomerRouter],
   ['/storefront', adminStorefrontRouter],
+  ['/reviews', adminReviewRouter],
+  ['/support', adminSupportRouter],
 ];
 
 /** Every route under /api/admin, with its parameters filled in with plausible values. */
@@ -72,7 +76,7 @@ describe('the admin gate', () => {
   });
 
   it('finds enough routes that the next two tests mean something', () => {
-    expect(everyAdminRoute().length).toBeGreaterThan(35);
+    expect(everyAdminRoute().length).toBeGreaterThan(45);
   });
 
   it('answers 401 on every admin route to a caller with no session', async () => {

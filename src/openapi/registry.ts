@@ -47,6 +47,18 @@ import {
   moveLineSchema,
   setQuantitySchema,
 } from '../modules/cart/cart.schema.js';
+import {
+  ADMIN_REVIEW_QUEUES,
+  REVIEW_SORT_KEYS,
+  hideReviewSchema,
+  writeReviewSchema,
+} from '../modules/review/review.schema.js';
+import {
+  openTicketSchema,
+  replySchema,
+  staffReplySchema,
+} from '../modules/support/support.schema.js';
+import { TICKET_STATUSES } from '../modules/support/support-ticket.model.js';
 
 /**
  * The contract between the two repos.
@@ -683,6 +695,89 @@ registry.registerPath({
   summary: 'One product, with its attributes and variants.',
   request: { params: z.object({ slug: z.string() }) },
   responses: { 200: json(envelope(productSchema), 'The product.'), 404: errors[404] },
+});
+
+const ratingSummarySchema = registry.register(
+  'RatingSummary',
+  z
+    .object({
+      average: z.number().openapi({ description: 'Two decimal places; 0 when there are none.' }),
+      count: z.number().int(),
+      distribution: z
+        .array(z.object({ rating: z.number().int().min(1).max(5), count: z.number().int() }))
+        .openapi({ description: 'Five stars down to one, every star present.' }),
+    })
+    .openapi('RatingSummary'),
+);
+
+const publicReviewSchema = registry.register(
+  'PublicReview',
+  z
+    .object({
+      id: z.string(),
+      rating: z.number().int().min(1).max(5),
+      title: z.string().optional(),
+      body: z.string().optional(),
+      authorName: z.string().openapi({
+        description:
+          'A first name and an initial, rendered when the review was written. Never an email ' +
+          'address, and never a whole name.',
+      }),
+      purchased: z
+        .array(z.object({ key: z.string(), value: z.string() }))
+        .openapi({ description: 'The variant as bought — axis keys and value slugs.' }),
+      createdAt: z.string(),
+      editedAt: z.string().nullable(),
+    })
+    .openapi({
+      description:
+        'Every review is from an order that reached the person who wrote it; there is no ' +
+        'other kind, so there is no "verified" flag.',
+    })
+    .openapi('PublicReview'),
+);
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/catalog/products/{slug}/reviews',
+  tags: ['Catalogue'],
+  summary: 'A product’s published reviews, with the summary above them.',
+  request: {
+    params: z.object({ slug: z.string() }),
+    query: z.object({
+      sort: z.enum(REVIEW_SORT_KEYS).optional(),
+      page: z.number().int().min(1).optional(),
+      perPage: z.number().int().min(1).max(60).optional(),
+    }),
+  },
+  responses: {
+    200: json(
+      paged(publicReviewSchema).extend({ summary: ratingSummarySchema }),
+      'Published reviews only. A hidden review is in neither the list nor the summary.',
+    ),
+    404: errors[404],
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/catalog/sitemap',
+  tags: ['Catalogue'],
+  summary: 'Every live shelf and product, for the sitemap.',
+  description:
+    'Never a filter combination: those pages are `noindex`, and a sitemap listing one would ' +
+    'contradict that. Capped at the protocol’s 50,000 entries per list.',
+  responses: {
+    200: json(
+      envelope(
+        z.object({
+          categories: z.array(z.object({ path: z.string(), updatedAt: z.string() })),
+          products: z.array(z.object({ slug: z.string(), updatedAt: z.string() })),
+        }),
+      ),
+      'What a crawler should index.',
+    ),
+  },
 });
 
 /* -------------------------------------------------------------------- cart -- */
@@ -2203,6 +2298,413 @@ registry.registerPath({
   responses: { 200: layoutEnvelope, 403: errors.stepUp, 404: errors[404], 409: errors[409] },
 });
 
+/* ----------------------------------------------------------------- reviews -- */
+
+const reviews = { tags: ['Reviews'], security: [{ sessionCookie: [] }] };
+
+const myReviewSchema = registry.register(
+  'MyReview',
+  publicReviewSchema
+    .extend({
+      product: z.object({
+        id: z.string(),
+        title: z.string(),
+        slug: z.string(),
+        imagePublicId: z.string().optional(),
+        onSale: z.boolean(),
+      }),
+      status: z.enum(['published', 'hidden']),
+      hiddenReason: z.string().nullable().openapi({
+        description: 'The shop’s note to the author, present only while the review is hidden.',
+      }),
+    })
+    .openapi('MyReview'),
+);
+
+const reviewableItemSchema = registry.register(
+  'ReviewableItem',
+  z
+    .object({
+      productId: z.string(),
+      title: z.string(),
+      slug: z.string(),
+      imagePublicId: z.string().optional(),
+      orderNumber: z.string(),
+      deliveredAt: z.string(),
+    })
+    .openapi('ReviewableItem'),
+);
+
+const productIdParams = z.object({ id: z.string().openapi({ description: 'The product id.' }) });
+
+registry.registerPath({
+  ...reviews,
+  method: 'get',
+  path: '/api/reviews/mine',
+  summary: 'What the signed-in person can review, and what they have written.',
+  responses: {
+    200: json(
+      envelope(
+        z.object({ toWrite: z.array(reviewableItemSchema), written: z.array(myReviewSchema) }),
+      ),
+      '`toWrite` is products from delivered orders not yet reviewed, still on sale.',
+    ),
+    401: errors[401],
+  },
+});
+
+registry.registerPath({
+  ...reviews,
+  method: 'put',
+  path: '/api/reviews/products/{id}',
+  summary: 'Write or replace the signed-in person’s review of a product.',
+  description:
+    'One review per person per product, so this is addressed by product and is idempotent. ' +
+    'Allowed only with an order of the product that reached `delivered`. A rewrite goes back ' +
+    'into the moderation queue and does not unhide a hidden review.',
+  request: {
+    params: productIdParams,
+    body: { content: { 'application/json': { schema: writeReviewSchema } } },
+  },
+  responses: {
+    200: json(envelope(z.object({ review: myReviewSchema })), 'The review as it now stands.'),
+    401: errors[401],
+    403: json(errorSchema, 'No order of this product has been delivered to this person.'),
+    404: errors[404],
+    422: errors[422],
+  },
+});
+
+registry.registerPath({
+  ...reviews,
+  method: 'delete',
+  path: '/api/reviews/products/{id}',
+  summary: 'Delete the signed-in person’s own review.',
+  request: { params: productIdParams },
+  responses: { 204: { description: 'Deleted.' }, 401: errors[401], 404: errors[404] },
+});
+
+const adminReviews = { security: [{ sessionCookie: [] }], tags: ['Admin reviews'] };
+
+const adminReviewSchema = registry.register(
+  'AdminReview',
+  publicReviewSchema
+    .extend({
+      status: z.enum(['published', 'hidden']),
+      needsReview: z.boolean().openapi({
+        description: 'Nobody in the shop has read this version yet. Set again by every edit.',
+      }),
+      moderation: z
+        .object({ byEmail: z.string().nullable(), at: z.string(), note: z.string() })
+        .nullable(),
+      product: z.object({
+        id: z.string(),
+        title: z.string(),
+        slug: z.string(),
+        onSale: z.boolean(),
+      }),
+      customer: z.object({ id: z.string(), email: z.string().nullable() }),
+      order: z.object({ id: z.string(), orderNumber: z.string().nullable() }),
+    })
+    .openapi('AdminReview'),
+);
+
+const adminReviewEnvelope = json(
+  envelope(z.object({ review: adminReviewSchema })),
+  'The review as it now stands.',
+);
+const moderationRefused = json(
+  errorSchema,
+  'The review is not in a state this action applies to — another admin got there first. ' +
+    '`details` carries its current `status` and `needsReview`.',
+);
+
+registry.registerPath({
+  ...adminReviews,
+  method: 'get',
+  path: '/api/admin/reviews',
+  summary: 'The moderation queue, hidden reviews, or all of them.',
+  request: {
+    query: z.object({
+      queue: z.enum(ADMIN_REVIEW_QUEUES).optional().openapi({
+        description: '`unread` (the default) is oldest first; the others newest first.',
+      }),
+      page: z.number().int().min(1).optional(),
+      perPage: z.number().int().min(1).max(60).optional(),
+    }),
+  },
+  responses: { 200: json(paged(adminReviewSchema), 'A page of reviews.') },
+});
+
+registry.registerPath({
+  ...adminReviews,
+  method: 'post',
+  path: '/api/admin/reviews/{id}/keep',
+  summary: 'Mark a review read, leaving it as it is.',
+  request: { params: idParams },
+  responses: { 200: adminReviewEnvelope, 404: errors[404], 409: moderationRefused },
+});
+
+registry.registerPath({
+  ...adminReviews,
+  method: 'post',
+  path: '/api/admin/reviews/{id}/hide',
+  summary: 'Take a review off the product page and out of the average.',
+  description: 'The note is shown to the review’s author. The review can be restored.',
+  request: {
+    params: idParams,
+    body: { content: { 'application/json': { schema: hideReviewSchema } } },
+  },
+  responses: {
+    200: adminReviewEnvelope,
+    404: errors[404],
+    409: moderationRefused,
+    422: errors[422],
+  },
+});
+
+registry.registerPath({
+  ...adminReviews,
+  method: 'post',
+  path: '/api/admin/reviews/{id}/restore',
+  summary: 'Put a hidden review back.',
+  request: { params: idParams },
+  responses: { 200: adminReviewEnvelope, 404: errors[404], 409: moderationRefused },
+});
+
+/* ----------------------------------------------------------------- support -- */
+
+const support = { tags: ['Support'], security: [{ sessionCookie: [] }] };
+
+const supportMessageSchema = registry.register(
+  'SupportMessage',
+  z
+    .object({
+      id: z.string(),
+      from: z.enum(['customer', 'shop']),
+      body: z.string(),
+      at: z.string(),
+    })
+    .openapi('SupportMessage'),
+);
+
+const supportTicketSchema = registry.register(
+  'SupportTicket',
+  z
+    .object({
+      reference: z.string().openapi({ example: 'SUP-7K3M90' }),
+      subject: z.string(),
+      status: z.enum(TICKET_STATUSES).openapi({
+        description:
+          'Who owes the next message: `open` — the shop; `answered` — the shop replied last; ' +
+          '`closed` — ended, until the customer writes again.',
+      }),
+      orderNumber: z.string().nullable(),
+      createdAt: z.string(),
+      lastMessageAt: z.string(),
+      closedAt: z.string().nullable(),
+      messages: z.array(supportMessageSchema),
+    })
+    .openapi('SupportTicket'),
+);
+
+const lastMessageSchema = z.object({ from: z.enum(['customer', 'shop']), excerpt: z.string() });
+
+const supportTicketSummarySchema = registry.register(
+  'SupportTicketSummary',
+  supportTicketSchema
+    .omit({ messages: true, closedAt: true })
+    .extend({
+      lastMessage: lastMessageSchema,
+      unread: z.boolean().openapi({
+        description: 'The shop has replied since the customer last opened the conversation.',
+      }),
+    })
+    .openapi('SupportTicketSummary'),
+);
+
+const referenceParams = z.object({ reference: z.string() });
+const ticketEnvelope = (description: string) =>
+  json(envelope(z.object({ ticket: supportTicketSchema })), description);
+
+registry.registerPath({
+  ...support,
+  method: 'get',
+  path: '/api/support/tickets',
+  summary: 'The signed-in person’s conversations, most recent first.',
+  request: {
+    query: z.object({
+      page: z.number().int().min(1).optional(),
+      perPage: z.number().int().min(1).max(60).optional(),
+    }),
+  },
+  responses: { 200: json(paged(supportTicketSummarySchema), 'A page.'), 401: errors[401] },
+});
+
+registry.registerPath({
+  ...support,
+  method: 'post',
+  path: '/api/support/tickets',
+  summary: 'Open a conversation.',
+  description:
+    'Requires an account, whose proven address is where replies go — see ADR-014. ' +
+    '`orderNumber` must name one of the caller’s own orders.',
+  request: { body: { content: { 'application/json': { schema: openTicketSchema } } } },
+  responses: {
+    201: ticketEnvelope('The new conversation.'),
+    401: errors[401],
+    409: json(errorSchema, 'Five conversations are already open.'),
+    422: errors[422],
+  },
+});
+
+registry.registerPath({
+  ...support,
+  method: 'get',
+  path: '/api/support/tickets/{reference}',
+  summary: 'One of the caller’s conversations. Marks the shop’s replies as seen.',
+  request: { params: referenceParams },
+  responses: { 200: ticketEnvelope('The conversation.'), 404: errors[404] },
+});
+
+registry.registerPath({
+  ...support,
+  method: 'post',
+  path: '/api/support/tickets/{reference}/messages',
+  summary: 'Add a message. Reopens a closed conversation.',
+  request: {
+    params: referenceParams,
+    body: { content: { 'application/json': { schema: replySchema } } },
+  },
+  responses: {
+    201: ticketEnvelope('The conversation, with the message added.'),
+    404: errors[404],
+    409: json(errorSchema, 'The conversation holds its maximum of 100 messages.'),
+    422: errors[422],
+  },
+});
+
+registry.registerPath({
+  ...support,
+  method: 'post',
+  path: '/api/support/tickets/{reference}/close',
+  summary: 'Close a conversation. Idempotent.',
+  request: { params: referenceParams },
+  responses: { 200: ticketEnvelope('The conversation.'), 404: errors[404] },
+});
+
+const adminSupport = { security: [{ sessionCookie: [] }], tags: ['Admin support'] };
+
+const adminTicketSummarySchema = registry.register(
+  'AdminSupportTicketSummary',
+  z
+    .object({
+      id: z.string(),
+      reference: z.string(),
+      subject: z.string(),
+      status: z.enum(TICKET_STATUSES),
+      email: z.string(),
+      orderNumber: z.string().nullable(),
+      createdAt: z.string(),
+      lastMessageAt: z.string(),
+      lastMessage: lastMessageSchema,
+    })
+    .openapi('AdminSupportTicketSummary'),
+);
+
+const adminTicketSchema = registry.register(
+  'AdminSupportTicket',
+  adminTicketSummarySchema
+    .omit({ lastMessage: true })
+    .extend({
+      closedAt: z.string().nullable(),
+      closedBy: z.enum(['customer', 'shop']).nullable(),
+      customer: z
+        .object({ id: z.string(), email: z.string(), name: z.string().optional() })
+        .nullable(),
+      order: z
+        .object({ id: z.string(), orderNumber: z.string(), status: z.enum(ORDER_STATUSES) })
+        .nullable(),
+      messages: z.array(
+        supportMessageSchema.extend({
+          staffEmail: z.string().nullable().openapi({
+            description: 'Which admin wrote a shop message. Never sent to the customer.',
+          }),
+        }),
+      ),
+    })
+    .openapi('AdminSupportTicket'),
+);
+
+const adminTicketEnvelope = (description: string) =>
+  json(envelope(z.object({ ticket: adminTicketSchema })), description);
+
+registry.registerPath({
+  ...adminSupport,
+  method: 'get',
+  path: '/api/admin/support/tickets',
+  summary: 'The inbox.',
+  description:
+    '`status=open` is sorted longest-waiting first; everything else newest first. `q` takes ' +
+    'a reference or the start of an email address.',
+  request: {
+    query: z.object({
+      status: z.enum(TICKET_STATUSES).optional(),
+      q: z.string().optional(),
+      page: z.number().int().min(1).optional(),
+      perPage: z.number().int().min(1).max(60).optional(),
+    }),
+  },
+  responses: { 200: json(paged(adminTicketSummarySchema), 'A page of conversations.') },
+});
+
+registry.registerPath({
+  ...adminSupport,
+  method: 'get',
+  path: '/api/admin/support/tickets/{id}',
+  summary: 'One conversation, with the customer and the order it is about.',
+  request: { params: idParams },
+  responses: { 200: adminTicketEnvelope('The conversation.'), 404: errors[404] },
+});
+
+registry.registerPath({
+  ...adminSupport,
+  method: 'post',
+  path: '/api/admin/support/tickets/{id}/messages',
+  summary: 'Reply, and optionally close in the same step.',
+  description:
+    'The notification email is committed to the mail outbox in the same transaction as the ' +
+    'reply, and delivered by the sweep.',
+  request: {
+    params: idParams,
+    body: { content: { 'application/json': { schema: staffReplySchema } } },
+  },
+  responses: {
+    201: adminTicketEnvelope('The conversation, with the reply added.'),
+    404: errors[404],
+    409: json(errorSchema, 'The conversation holds its maximum of 100 messages.'),
+    422: errors[422],
+  },
+});
+
+registry.registerPath({
+  ...adminSupport,
+  method: 'post',
+  path: '/api/admin/support/tickets/{id}/close',
+  summary: 'Close a conversation. Idempotent.',
+  request: { params: idParams },
+  responses: { 200: adminTicketEnvelope('The conversation.'), 404: errors[404] },
+});
+
+registry.registerPath({
+  ...adminSupport,
+  method: 'post',
+  path: '/api/admin/support/tickets/{id}/reopen',
+  summary: 'Put a closed conversation back in the inbox as needing a reply. Idempotent.',
+  request: { params: idParams },
+  responses: { 200: adminTicketEnvelope('The conversation.'), 404: errors[404] },
+});
+
 /* ------------------------------------------------------ dashboard and audit -- */
 
 const adminConsole = { security: [{ sessionCookie: [] }], tags: ['Admin console'] };
@@ -2259,6 +2761,36 @@ registry.registerPath({
                   orders: z.number().int(),
                 }),
               ),
+            }),
+            support: z.object({
+              waiting: z.object({
+                count: z.number().int(),
+                oldest: z.array(
+                  z.object({
+                    id: z.string(),
+                    reference: z.string(),
+                    subject: z.string(),
+                    email: z.string(),
+                    waitingSince: z.string(),
+                  }),
+                ),
+              }),
+            }),
+            reviews: z.object({
+              unread: z.object({
+                count: z.number().int(),
+                oldest: z.array(
+                  z.object({
+                    id: z.string(),
+                    productId: z.string(),
+                    productTitle: z.string(),
+                    rating: z.number().int(),
+                    authorName: z.string(),
+                    hidden: z.boolean(),
+                    postedAt: z.string(),
+                  }),
+                ),
+              }),
             }),
             storefront: z.object({
               publishedVersion: z.number().int().nullable(),
