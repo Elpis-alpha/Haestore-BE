@@ -392,6 +392,10 @@
           "key": {
             "type": "string"
           },
+          "label": {
+            "type": "string",
+            "description": "The definition’s current label. Absent where the attribute no longer applies to the product’s category."
+          },
           "type": {
             "type": "string",
             "enum": [
@@ -602,6 +606,50 @@
               },
               "defaultVariantId": {
                 "type": "string"
+              },
+              "axes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "unit": {
+                      "type": "string"
+                    },
+                    "options": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "swatchHex": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "value",
+                          "label"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "label",
+                    "options"
+                  ]
+                },
+                "description": "Each axis in variantAxes with its label and its values’ labels and swatches, so a picker never has to show the raw slug a variant stores."
               }
             },
             "required": [
@@ -610,7 +658,8 @@
               "status",
               "attributes",
               "variantAxes",
-              "variants"
+              "variants",
+              "axes"
             ]
           }
         ]
@@ -1204,6 +1253,486 @@
         ],
         "description": "Nothing about price or stock is stored on a wish — it is read live, because a wishlist is looked at weeks after it is written."
       },
+      "AttributeDefinition": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string",
+            "description": "Permanent. See the create route."
+          },
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "select",
+              "multiselect",
+              "text",
+              "number",
+              "boolean",
+              "color",
+              "dimension"
+            ],
+            "description": "Permanent."
+          },
+          "unit": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttributeOption"
+            }
+          },
+          "isFilterable": {
+            "type": "boolean"
+          },
+          "isSearchable": {
+            "type": "boolean"
+          },
+          "isVariantAxis": {
+            "type": "boolean"
+          },
+          "filterUi": {
+            "type": "string",
+            "enum": [
+              "checkbox",
+              "swatch",
+              "range",
+              "toggle",
+              "select"
+            ]
+          },
+          "validation": {
+            "type": "object",
+            "properties": {
+              "min": {
+                "type": "number"
+              },
+              "max": {
+                "type": "number"
+              },
+              "step": {
+                "type": "number"
+              },
+              "maxLength": {
+                "type": "number"
+              },
+              "requiredByDefault": {
+                "type": "boolean"
+              }
+            }
+          },
+          "archivedAt": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "_id",
+          "key",
+          "label",
+          "type",
+          "options",
+          "isFilterable",
+          "isSearchable",
+          "isVariantAxis",
+          "filterUi",
+          "validation",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "AdminCategory": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Category"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "active",
+                  "hidden"
+                ]
+              },
+              "validationMode": {
+                "type": "string",
+                "enum": [
+                  "lenient",
+                  "strict"
+                ]
+              },
+              "attributeBindings": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "defId": {
+                      "type": "string"
+                    },
+                    "key": {
+                      "type": "string"
+                    },
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "order": {
+                      "type": "integer"
+                    },
+                    "group": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "defId",
+                    "key",
+                    "required",
+                    "order"
+                  ]
+                }
+              },
+              "suppressedKeys": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "children": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": {}
+                },
+                "description": "AdminCategory nodes, recursively. Described loosely because the document format cannot express the recursion without a reference cycle."
+              }
+            },
+            "required": [
+              "status",
+              "validationMode",
+              "attributeBindings",
+              "suppressedKeys",
+              "children"
+            ]
+          }
+        ]
+      },
+      "AdminProduct": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "subtitle": {
+            "type": "string"
+          },
+          "priceRange": {
+            "type": "object",
+            "properties": {
+              "min": {
+                "type": "integer"
+              },
+              "max": {
+                "type": "integer"
+              },
+              "currency": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "min",
+              "max",
+              "currency"
+            ]
+          },
+          "inStock": {
+            "type": "boolean"
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "publicId": {
+                  "type": "string"
+                },
+                "alt": {
+                  "type": "string"
+                },
+                "width": {
+                  "type": "integer"
+                },
+                "height": {
+                  "type": "integer"
+                },
+                "blurDataUrl": {
+                  "type": "string"
+                },
+                "position": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "publicId",
+                "alt",
+                "position"
+              ]
+            }
+          },
+          "ratingAverage": {
+            "type": "number"
+          },
+          "ratingCount": {
+            "type": "integer"
+          },
+          "description": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "categoryAncestors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "active",
+              "archived"
+            ]
+          },
+          "attributes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductAttribute"
+            }
+          },
+          "variantAxes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "variants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Variant"
+            }
+          },
+          "defaultVariantId": {
+            "type": "string"
+          },
+          "needsAttention": {
+            "type": "boolean"
+          },
+          "validationIssues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key",
+                "code",
+                "message"
+              ]
+            }
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "_id",
+          "title",
+          "slug",
+          "inStock",
+          "images",
+          "ratingAverage",
+          "ratingCount",
+          "category",
+          "categoryAncestors",
+          "status",
+          "attributes",
+          "variantAxes",
+          "variants",
+          "needsAttention",
+          "validationIssues",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "AdminProductSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "active",
+              "archived"
+            ]
+          },
+          "category": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "path"
+            ]
+          },
+          "priceRange": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "min": {
+                "type": "integer"
+              },
+              "max": {
+                "type": "integer"
+              },
+              "currency": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "min",
+              "max",
+              "currency"
+            ]
+          },
+          "inStock": {
+            "type": "boolean"
+          },
+          "variantCount": {
+            "type": "integer"
+          },
+          "available": {
+            "type": "integer"
+          },
+          "needsAttention": {
+            "type": "boolean"
+          },
+          "issueCount": {
+            "type": "integer"
+          },
+          "imagePublicId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "slug",
+          "status",
+          "category",
+          "priceRange",
+          "inStock",
+          "variantCount",
+          "available",
+          "needsAttention",
+          "issueCount",
+          "imagePublicId",
+          "updatedAt"
+        ]
+      },
+      "EffectiveAttributeSet": {
+        "type": "object",
+        "properties": {
+          "categoryId": {
+            "type": "string"
+          },
+          "categoryPath": {
+            "type": "string"
+          },
+          "validationMode": {
+            "type": "string",
+            "enum": [
+              "lenient",
+              "strict"
+            ]
+          },
+          "attributes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EffectiveAttribute"
+            }
+          }
+        },
+        "required": [
+          "categoryId",
+          "categoryPath",
+          "validationMode",
+          "attributes"
+        ]
+      },
       "ShippingAddress": {
         "type": "object",
         "properties": {
@@ -1424,6 +1953,1249 @@
           "itemCount",
           "placedAt",
           "paidAt"
+        ]
+      },
+      "AdminOrderSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "orderNumber": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending_payment",
+              "paid",
+              "processing",
+              "shipped",
+              "delivered",
+              "canceled",
+              "refunded"
+            ]
+          },
+          "email": {
+            "type": "string"
+          },
+          "guest": {
+            "type": "boolean"
+          },
+          "itemCount": {
+            "type": "integer"
+          },
+          "grandTotal": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "stripe",
+              "paypal"
+            ]
+          },
+          "placedAt": {
+            "type": "string"
+          },
+          "paidAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stuckPayment": {
+            "type": "boolean",
+            "description": "Unpaid, with a payment started more than 15 minutes ago — most likely a lost webhook, and what the reconcile action is for."
+          }
+        },
+        "required": [
+          "id",
+          "orderNumber",
+          "status",
+          "email",
+          "guest",
+          "itemCount",
+          "grandTotal",
+          "provider",
+          "placedAt",
+          "paidAt",
+          "stuckPayment"
+        ]
+      },
+      "AdminOrder": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "orderNumber": {
+            "type": "string",
+            "example": "HAE-8KDM2P4Q"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending_payment",
+              "paid",
+              "processing",
+              "shipped",
+              "delivered",
+              "canceled",
+              "refunded"
+            ]
+          },
+          "email": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 3
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderLine"
+            }
+          },
+          "totals": {
+            "type": "object",
+            "properties": {
+              "subtotal": {
+                "$ref": "#/components/schemas/Money"
+              },
+              "grandTotal": {
+                "$ref": "#/components/schemas/Money"
+              }
+            },
+            "required": [
+              "subtotal",
+              "grandTotal"
+            ],
+            "description": "grandTotal equals subtotal: this shop charges no delivery and no tax. The breakdown exists so that every amount check reads grandTotal specifically, and a shipping line added later changes one function rather than five."
+          },
+          "shippingAddress": {
+            "$ref": "#/components/schemas/ShippingAddress"
+          },
+          "payment": {
+            "type": "object",
+            "properties": {
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "stripe",
+                  "paypal"
+                ]
+              },
+              "paid": {
+                "type": "boolean"
+              },
+              "intentId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "captureId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "providerStatus": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "amountCaptured": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/Money"
+                  },
+                  {
+                    "type": [
+                      "object",
+                      "null"
+                    ]
+                  }
+                ]
+              },
+              "capturedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "lastError": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Which verification refused a payment, when one did."
+              }
+            },
+            "required": [
+              "provider",
+              "paid",
+              "intentId",
+              "captureId",
+              "providerStatus",
+              "amountCaptured",
+              "capturedAt",
+              "lastError"
+            ]
+          },
+          "itemCount": {
+            "type": "integer"
+          },
+          "placedAt": {
+            "type": "string"
+          },
+          "paidAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "userId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stockReserved": {
+            "type": "boolean"
+          },
+          "reservationExpiresAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "canceledAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stuckPayment": {
+            "type": "boolean"
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "pending_payment",
+                    "paid",
+                    "processing",
+                    "shipped",
+                    "delivered",
+                    "canceled",
+                    "refunded"
+                  ]
+                },
+                "at": {
+                  "type": "string"
+                },
+                "by": {
+                  "type": "string"
+                },
+                "note": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "status",
+                "at",
+                "by"
+              ]
+            }
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "reconcile",
+                "start_processing",
+                "mark_shipped",
+                "mark_delivered",
+                "cancel",
+                "record_refund"
+              ]
+            },
+            "description": "What may be done to this order now, derived from the status machine on the server. Render buttons from this; do not re-derive it."
+          }
+        },
+        "required": [
+          "id",
+          "orderNumber",
+          "status",
+          "email",
+          "currency",
+          "lines",
+          "totals",
+          "shippingAddress",
+          "payment",
+          "itemCount",
+          "placedAt",
+          "paidAt",
+          "userId",
+          "stockReserved",
+          "reservationExpiresAt",
+          "canceledAt",
+          "stuckPayment",
+          "history",
+          "actions"
+        ]
+      },
+      "CustomerSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "lastSeenAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "orderCount": {
+            "type": "integer"
+          },
+          "spent": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Money"
+            },
+            "description": "Money kept, one entry per currency. Unpaid and refunded orders excluded."
+          },
+          "lastOrderAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "roles",
+          "createdAt",
+          "lastSeenAt",
+          "orderCount",
+          "spent",
+          "lastOrderAt"
+        ]
+      },
+      "CustomerDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CustomerSummary"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "self": {
+                "type": "boolean"
+              },
+              "bootstrapAdmin": {
+                "type": "boolean",
+                "description": "On ADMIN_EMAILS: the role would be re-granted at next sign-in."
+              },
+              "activeSessions": {
+                "type": "integer"
+              },
+              "recentOrders": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AdminOrderSummary"
+                }
+              }
+            },
+            "required": [
+              "self",
+              "bootstrapAdmin",
+              "activeSessions",
+              "recentOrders"
+            ]
+          }
+        ]
+      },
+      "StorefrontSection": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9-]{4,40}$"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "hero"
+                ]
+              },
+              "heading": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              "body": {
+                "type": "string",
+                "maxLength": 400,
+                "default": ""
+              },
+              "primary": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "href": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "label",
+                  "href"
+                ]
+              },
+              "secondary": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "href": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "label",
+                  "href"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "heading",
+              "primary"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9-]{4,40}$"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "shelves"
+                ]
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "note": {
+                "type": "string",
+                "maxLength": 160,
+                "default": ""
+              },
+              "categoryIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[0-9a-fA-F]{24}$"
+                },
+                "maxItems": 12,
+                "default": []
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "title"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9-]{4,40}$"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "product-row"
+                ]
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "note": {
+                "type": "string",
+                "maxLength": 160,
+                "default": ""
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "newest",
+                  "category",
+                  "handpicked"
+                ]
+              },
+              "categoryId": {
+                "type": "string",
+                "pattern": "^[0-9a-fA-F]{24}$"
+              },
+              "productIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[0-9a-fA-F]{24}$"
+                },
+                "maxItems": 12,
+                "default": []
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 3,
+                "maximum": 12,
+                "default": 6
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "title",
+              "source"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9-]{4,40}$"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "note"
+                ]
+              },
+              "heading": {
+                "type": "string",
+                "maxLength": 80,
+                "default": ""
+              },
+              "body": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "body"
+            ]
+          }
+        ]
+      },
+      "ResolvedSection": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9-]{4,40}$"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "hero"
+                ]
+              },
+              "heading": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              "body": {
+                "type": "string",
+                "maxLength": 400,
+                "default": ""
+              },
+              "primary": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "href": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "label",
+                  "href"
+                ]
+              },
+              "secondary": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "href": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "label",
+                  "href"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "heading",
+              "primary"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9-]{4,40}$"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "shelves"
+                ]
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "note": {
+                "type": "string",
+                "maxLength": 160,
+                "default": ""
+              },
+              "categoryIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[0-9a-fA-F]{24}$"
+                },
+                "maxItems": 12,
+                "default": []
+              },
+              "shelves": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string"
+                    },
+                    "imagePublicId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "path"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "title",
+              "shelves"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9-]{4,40}$"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "product-row"
+                ]
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "note": {
+                "type": "string",
+                "maxLength": 160,
+                "default": ""
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "newest",
+                  "category",
+                  "handpicked"
+                ]
+              },
+              "categoryId": {
+                "type": "string",
+                "pattern": "^[0-9a-fA-F]{24}$"
+              },
+              "productIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[0-9a-fA-F]{24}$"
+                },
+                "maxItems": 12,
+                "default": []
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 3,
+                "maximum": 12,
+                "default": 6
+              },
+              "products": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ListingCard"
+                }
+              },
+              "category": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "path"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "title",
+              "source",
+              "products",
+              "category"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9-]{4,40}$"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "note"
+                ]
+              },
+              "heading": {
+                "type": "string",
+                "maxLength": 80,
+                "default": ""
+              },
+              "body": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "body"
+            ]
+          }
+        ]
+      },
+      "StorefrontLayout": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "handle": {
+            "type": "string",
+            "enum": [
+              "home"
+            ]
+          },
+          "version": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "published",
+              "retired"
+            ]
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StorefrontSection"
+            }
+          },
+          "note": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "description": "Send it back with a draft save or publish; a stale one is a 409."
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "publishedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "retiredAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "handle",
+          "version",
+          "status",
+          "sections",
+          "note",
+          "revision",
+          "createdAt",
+          "updatedAt",
+          "publishedAt",
+          "retiredAt"
+        ]
+      },
+      "StorefrontVersion": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "published",
+              "retired"
+            ]
+          },
+          "note": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "publishedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "retiredAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sectionCount": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "status",
+          "note",
+          "createdAt",
+          "updatedAt",
+          "publishedAt",
+          "retiredAt",
+          "sectionCount"
+        ]
+      },
+      "Dashboard": {
+        "type": "object",
+        "properties": {
+          "orders": {
+            "type": "object",
+            "properties": {
+              "toFulfil": {
+                "type": "integer"
+              },
+              "stuckPayments": {
+                "type": "object",
+                "properties": {
+                  "count": {
+                    "type": "integer"
+                  },
+                  "oldest": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "orderNumber": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "provider": {
+                          "type": "string",
+                          "enum": [
+                            "stripe",
+                            "paypal"
+                          ]
+                        },
+                        "grandTotal": {
+                          "$ref": "#/components/schemas/Money"
+                        },
+                        "placedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "orderNumber",
+                        "email",
+                        "provider",
+                        "grandTotal",
+                        "placedAt"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "count",
+                  "oldest"
+                ]
+              }
+            },
+            "required": [
+              "toFulfil",
+              "stuckPayments"
+            ]
+          },
+          "catalogue": {
+            "type": "object",
+            "properties": {
+              "needsAttention": {
+                "type": "object",
+                "properties": {
+                  "count": {
+                    "type": "integer"
+                  },
+                  "recent": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "title",
+                        "issues"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "count",
+                  "recent"
+                ]
+              },
+              "lowStock": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "productId": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "sku": {
+                      "type": "string"
+                    },
+                    "available": {
+                      "type": "integer"
+                    },
+                    "threshold": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "productId",
+                    "title",
+                    "sku",
+                    "available",
+                    "threshold"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "needsAttention",
+              "lowStock"
+            ]
+          },
+          "revenue": {
+            "type": "object",
+            "properties": {
+              "windowDays": {
+                "type": "integer"
+              },
+              "byCurrency": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "currency": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "orders": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "currency",
+                    "amount",
+                    "orders"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "windowDays",
+              "byCurrency"
+            ]
+          },
+          "storefront": {
+            "type": "object",
+            "properties": {
+              "publishedVersion": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "publishedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "draftVersion": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "draftUpdatedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "publishedVersion",
+              "publishedAt",
+              "draftVersion",
+              "draftUpdatedAt"
+            ]
+          }
+        },
+        "required": [
+          "orders",
+          "catalogue",
+          "revenue",
+          "storefront"
+        ]
+      },
+      "AuditEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "object",
+            "properties": {
+              "userId": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "userId",
+              "email"
+            ]
+          },
+          "method": {
+            "type": "string"
+          },
+          "route": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "targetId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "integer"
+          },
+          "requestId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "actor",
+          "method",
+          "route",
+          "path",
+          "targetId",
+          "status",
+          "requestId",
+          "at"
         ]
       }
     },
@@ -3118,6 +4890,20 @@
           "Admin catalogue"
         ],
         "summary": "Every attribute definition.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "required": false,
+            "name": "includeArchived",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Definitions.",
@@ -3128,7 +4914,9 @@
                   "properties": {
                     "data": {
                       "type": "array",
-                      "items": {}
+                      "items": {
+                        "$ref": "#/components/schemas/AttributeDefinition"
+                      }
                     }
                   },
                   "required": [
@@ -3298,8 +5086,13 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "data": {}
-                  }
+                    "data": {
+                      "$ref": "#/components/schemas/AttributeDefinition"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -3398,20 +5191,16 @@
                         "label"
                       ]
                     },
-                    "maxItems": 200,
-                    "default": []
+                    "maxItems": 200
                   },
                   "isFilterable": {
-                    "type": "boolean",
-                    "default": true
+                    "type": "boolean"
                   },
                   "isSearchable": {
-                    "type": "boolean",
-                    "default": false
+                    "type": "boolean"
                   },
                   "isVariantAxis": {
-                    "type": "boolean",
-                    "default": false
+                    "type": "boolean"
                   },
                   "filterUi": {
                     "type": "string",
@@ -3421,8 +5210,7 @@
                       "range",
                       "toggle",
                       "select"
-                    ],
-                    "default": "checkbox"
+                    ]
                   },
                   "validation": {
                     "type": "object",
@@ -3446,9 +5234,6 @@
                         "type": "boolean",
                         "default": false
                       }
-                    },
-                    "default": {
-                      "requiredByDefault": false
                     }
                   }
                 }
@@ -3464,8 +5249,64 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "data": {}
-                  }
+                    "data": {
+                      "$ref": "#/components/schemas/AttributeDefinition"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin catalogue"
+        ],
+        "summary": "One attribute definition.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The definition.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AttributeDefinition"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -3563,7 +5404,110 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/Category"
+                      "type": "object",
+                      "properties": {
+                        "_id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "slug": {
+                          "type": "string"
+                        },
+                        "path": {
+                          "type": "string",
+                          "example": "coffee-tea/beans"
+                        },
+                        "parent": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "ancestors": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "Root-first, including self."
+                        },
+                        "depth": {
+                          "type": "integer"
+                        },
+                        "order": {
+                          "type": "integer"
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "imagePublicId": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "hidden"
+                          ]
+                        },
+                        "validationMode": {
+                          "type": "string",
+                          "enum": [
+                            "lenient",
+                            "strict"
+                          ]
+                        },
+                        "attributeBindings": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "defId": {
+                                "type": "string"
+                              },
+                              "key": {
+                                "type": "string"
+                              },
+                              "required": {
+                                "type": "boolean"
+                              },
+                              "order": {
+                                "type": "integer"
+                              },
+                              "group": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "defId",
+                              "key",
+                              "required",
+                              "order"
+                            ]
+                          }
+                        },
+                        "suppressedKeys": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "_id",
+                        "name",
+                        "slug",
+                        "path",
+                        "parent",
+                        "ancestors",
+                        "depth",
+                        "order",
+                        "status",
+                        "validationMode",
+                        "attributeBindings",
+                        "suppressedKeys"
+                      ]
                     }
                   },
                   "required": [
@@ -3579,6 +5523,40 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin catalogue"
+        ],
+        "summary": "The whole category tree, hidden branches included.",
+        "responses": {
+          "200": {
+            "description": "Root nodes, each with children.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminCategory"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -3632,24 +5610,21 @@
                   },
                   "order": {
                     "type": "integer",
-                    "minimum": 0,
-                    "default": 0
+                    "minimum": 0
                   },
                   "validationMode": {
                     "type": "string",
                     "enum": [
                       "lenient",
                       "strict"
-                    ],
-                    "default": "lenient"
+                    ]
                   },
                   "status": {
                     "type": "string",
                     "enum": [
                       "active",
                       "hidden"
-                    ],
-                    "default": "active"
+                    ]
                   }
                 }
               }
@@ -3665,7 +5640,110 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/Category"
+                      "type": "object",
+                      "properties": {
+                        "_id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "slug": {
+                          "type": "string"
+                        },
+                        "path": {
+                          "type": "string",
+                          "example": "coffee-tea/beans"
+                        },
+                        "parent": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "ancestors": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "Root-first, including self."
+                        },
+                        "depth": {
+                          "type": "integer"
+                        },
+                        "order": {
+                          "type": "integer"
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "imagePublicId": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "hidden"
+                          ]
+                        },
+                        "validationMode": {
+                          "type": "string",
+                          "enum": [
+                            "lenient",
+                            "strict"
+                          ]
+                        },
+                        "attributeBindings": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "defId": {
+                                "type": "string"
+                              },
+                              "key": {
+                                "type": "string"
+                              },
+                              "required": {
+                                "type": "boolean"
+                              },
+                              "order": {
+                                "type": "integer"
+                              },
+                              "group": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "defId",
+                              "key",
+                              "required",
+                              "order"
+                            ]
+                          }
+                        },
+                        "suppressedKeys": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "_id",
+                        "name",
+                        "slug",
+                        "path",
+                        "parent",
+                        "ancestors",
+                        "depth",
+                        "order",
+                        "status",
+                        "validationMode",
+                        "attributeBindings",
+                        "suppressedKeys"
+                      ]
                     }
                   },
                   "required": [
@@ -3677,6 +5755,63 @@
           },
           "404": {
             "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin catalogue"
+        ],
+        "summary": "Delete an empty category. Requires step-up.",
+        "description": "Refused with 409 while the category has sub-categories or products, which are named in the message. Behind step-up because it cannot be undone.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          },
+          "403": {
+            "description": "STEP_UP_REQUIRED — the session is valid, but its last verified code is more than 12 hours old. Verify a code through /api/auth/step-up and retry; the session survives.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with something that already exists.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3740,7 +5875,110 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/Category"
+                      "type": "object",
+                      "properties": {
+                        "_id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "slug": {
+                          "type": "string"
+                        },
+                        "path": {
+                          "type": "string",
+                          "example": "coffee-tea/beans"
+                        },
+                        "parent": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "ancestors": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "Root-first, including self."
+                        },
+                        "depth": {
+                          "type": "integer"
+                        },
+                        "order": {
+                          "type": "integer"
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "imagePublicId": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "hidden"
+                          ]
+                        },
+                        "validationMode": {
+                          "type": "string",
+                          "enum": [
+                            "lenient",
+                            "strict"
+                          ]
+                        },
+                        "attributeBindings": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "defId": {
+                                "type": "string"
+                              },
+                              "key": {
+                                "type": "string"
+                              },
+                              "required": {
+                                "type": "boolean"
+                              },
+                              "order": {
+                                "type": "integer"
+                              },
+                              "group": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "defId",
+                              "key",
+                              "required",
+                              "order"
+                            ]
+                          }
+                        },
+                        "suppressedKeys": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "_id",
+                        "name",
+                        "slug",
+                        "path",
+                        "parent",
+                        "ancestors",
+                        "depth",
+                        "order",
+                        "status",
+                        "validationMode",
+                        "attributeBindings",
+                        "suppressedKeys"
+                      ]
                     }
                   },
                   "required": [
@@ -3824,7 +6062,110 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/Category"
+                      "type": "object",
+                      "properties": {
+                        "_id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "slug": {
+                          "type": "string"
+                        },
+                        "path": {
+                          "type": "string",
+                          "example": "coffee-tea/beans"
+                        },
+                        "parent": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "ancestors": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "Root-first, including self."
+                        },
+                        "depth": {
+                          "type": "integer"
+                        },
+                        "order": {
+                          "type": "integer"
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "imagePublicId": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "hidden"
+                          ]
+                        },
+                        "validationMode": {
+                          "type": "string",
+                          "enum": [
+                            "lenient",
+                            "strict"
+                          ]
+                        },
+                        "attributeBindings": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "defId": {
+                                "type": "string"
+                              },
+                              "key": {
+                                "type": "string"
+                              },
+                              "required": {
+                                "type": "boolean"
+                              },
+                              "order": {
+                                "type": "integer"
+                              },
+                              "group": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "defId",
+                              "key",
+                              "required",
+                              "order"
+                            ]
+                          }
+                        },
+                        "suppressedKeys": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "_id",
+                        "name",
+                        "slug",
+                        "path",
+                        "parent",
+                        "ancestors",
+                        "depth",
+                        "order",
+                        "status",
+                        "validationMode",
+                        "attributeBindings",
+                        "suppressedKeys"
+                      ]
                     }
                   },
                   "required": [
@@ -3899,7 +6240,110 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/Category"
+                      "type": "object",
+                      "properties": {
+                        "_id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "slug": {
+                          "type": "string"
+                        },
+                        "path": {
+                          "type": "string",
+                          "example": "coffee-tea/beans"
+                        },
+                        "parent": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "ancestors": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "Root-first, including self."
+                        },
+                        "depth": {
+                          "type": "integer"
+                        },
+                        "order": {
+                          "type": "integer"
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "imagePublicId": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "hidden"
+                          ]
+                        },
+                        "validationMode": {
+                          "type": "string",
+                          "enum": [
+                            "lenient",
+                            "strict"
+                          ]
+                        },
+                        "attributeBindings": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "defId": {
+                                "type": "string"
+                              },
+                              "key": {
+                                "type": "string"
+                              },
+                              "required": {
+                                "type": "boolean"
+                              },
+                              "order": {
+                                "type": "integer"
+                              },
+                              "group": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "defId",
+                              "key",
+                              "required",
+                              "order"
+                            ]
+                          }
+                        },
+                        "suppressedKeys": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "_id",
+                        "name",
+                        "slug",
+                        "path",
+                        "parent",
+                        "ancestors",
+                        "depth",
+                        "order",
+                        "status",
+                        "validationMode",
+                        "attributeBindings",
+                        "suppressedKeys"
+                      ]
                     }
                   },
                   "required": [
@@ -3953,34 +6397,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "type": "object",
-                      "properties": {
-                        "categoryId": {
-                          "type": "string"
-                        },
-                        "categoryPath": {
-                          "type": "string"
-                        },
-                        "validationMode": {
-                          "type": "string",
-                          "enum": [
-                            "lenient",
-                            "strict"
-                          ]
-                        },
-                        "attributes": {
-                          "type": "array",
-                          "items": {
-                            "$ref": "#/components/schemas/EffectiveAttribute"
-                          }
-                        }
-                      },
-                      "required": [
-                        "categoryId",
-                        "categoryPath",
-                        "validationMode",
-                        "attributes"
-                      ]
+                      "$ref": "#/components/schemas/EffectiveAttributeSet"
                     }
                   },
                   "required": [
@@ -4243,7 +6660,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/Product"
+                      "$ref": "#/components/schemas/AdminProduct"
                     }
                   },
                   "required": [
@@ -4269,6 +6686,130 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin catalogue"
+        ],
+        "summary": "Every product, any status, from MongoDB.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "active",
+                "archived"
+              ]
+            },
+            "required": false,
+            "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "A branch: everything beneath it."
+            },
+            "required": false,
+            "description": "A branch: everything beneath it.",
+            "name": "categoryId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "A title fragment or an exact SKU."
+            },
+            "required": false,
+            "description": "A title fragment or an exact SKU.",
+            "name": "q",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "required": false,
+            "name": "needsAttention",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 60
+            },
+            "required": false,
+            "name": "perPage",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Most recently updated first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminProductSummary"
+                      }
+                    },
+                    "page": {
+                      "type": "object",
+                      "properties": {
+                        "page": {
+                          "type": "integer"
+                        },
+                        "perPage": {
+                          "type": "integer"
+                        },
+                        "total": {
+                          "type": "integer"
+                        },
+                        "totalPages": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "page",
+                        "perPage",
+                        "total",
+                        "totalPages"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "page"
+                  ]
                 }
               }
             }
@@ -4327,21 +6868,18 @@
                       "draft",
                       "active",
                       "archived"
-                    ],
-                    "default": "draft"
+                    ]
                   },
                   "attributes": {
                     "type": "object",
-                    "additionalProperties": {},
-                    "default": {}
+                    "additionalProperties": {}
                   },
                   "variantAxes": {
                     "type": "array",
                     "items": {
                       "type": "string"
                     },
-                    "maxItems": 4,
-                    "default": []
+                    "maxItems": 4
                   },
                   "variants": {
                     "type": "array",
@@ -4462,8 +7000,7 @@
                         "price"
                       ]
                     },
-                    "maxItems": 100,
-                    "default": []
+                    "maxItems": 100
                   },
                   "images": {
                     "type": "array",
@@ -4500,8 +7037,7 @@
                         "publicId"
                       ]
                     },
-                    "maxItems": 24,
-                    "default": []
+                    "maxItems": 24
                   }
                 }
               }
@@ -4517,12 +7053,109 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/Product"
+                      "$ref": "#/components/schemas/AdminProduct"
                     }
                   },
                   "required": [
                     "data"
                   ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin catalogue"
+        ],
+        "summary": "One product, whole, with its validation issues.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The product.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AdminProduct"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin catalogue"
+        ],
+        "summary": "Archive a product. Requires step-up.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Archived and removed from the index."
+          },
+          "403": {
+            "description": "STEP_UP_REQUIRED — the session is valid, but its last verified code is more than 12 hours old. Verify a code through /api/auth/step-up and retry; the session survives.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -4588,7 +7221,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/Product"
+                      "$ref": "#/components/schemas/AdminProduct"
                     }
                   },
                   "required": [
@@ -4691,6 +7324,42 @@
                         },
                         "warn": {
                           "type": "boolean"
+                        },
+                        "variants": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "sku": {
+                                "type": "string"
+                              },
+                              "axisValues": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "key": {
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "key",
+                                    "value"
+                                  ]
+                                }
+                              }
+                            },
+                            "required": [
+                              "sku",
+                              "axisValues"
+                            ]
+                          }
+                        },
+                        "product": {
+                          "$ref": "#/components/schemas/AdminProduct"
                         }
                       },
                       "required": [
@@ -4708,6 +7377,324 @@
           },
           "400": {
             "description": "The request was malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/catalog/attributes/usage": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin catalogue"
+        ],
+        "summary": "How many categories bind, and how many products carry, each attribute key.",
+        "responses": {
+          "200": {
+            "description": "Usage by key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "categories": {
+                            "type": "integer"
+                          },
+                          "products": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "categories",
+                          "products"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/catalog/attributes/{id}/archive": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin catalogue"
+        ],
+        "summary": "Retire an attribute from forms and filters. Stored values stay renderable.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The definition.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AttributeDefinition"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/catalog/attributes/{id}/restore": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin catalogue"
+        ],
+        "summary": "Bring an archived attribute back.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The definition.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AttributeDefinition"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/catalog/categories/{id}/attributes/{key}": {
+      "delete": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin catalogue"
+        ],
+        "summary": "Unbind an attribute from a category.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "key",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unbound.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "_id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "slug": {
+                          "type": "string"
+                        },
+                        "path": {
+                          "type": "string",
+                          "example": "coffee-tea/beans"
+                        },
+                        "parent": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "ancestors": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "Root-first, including self."
+                        },
+                        "depth": {
+                          "type": "integer"
+                        },
+                        "order": {
+                          "type": "integer"
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "imagePublicId": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "hidden"
+                          ]
+                        },
+                        "validationMode": {
+                          "type": "string",
+                          "enum": [
+                            "lenient",
+                            "strict"
+                          ]
+                        },
+                        "attributeBindings": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "defId": {
+                                "type": "string"
+                              },
+                              "key": {
+                                "type": "string"
+                              },
+                              "required": {
+                                "type": "boolean"
+                              },
+                              "order": {
+                                "type": "integer"
+                              },
+                              "group": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "defId",
+                              "key",
+                              "required",
+                              "order"
+                            ]
+                          }
+                        },
+                        "suppressedKeys": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "_id",
+                        "name",
+                        "slug",
+                        "path",
+                        "parent",
+                        "ancestors",
+                        "depth",
+                        "order",
+                        "status",
+                        "validationMode",
+                        "attributeBindings",
+                        "suppressedKeys"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5288,6 +8275,1718 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/orders": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin orders"
+        ],
+        "summary": "Every order, newest first.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending_payment",
+                "paid",
+                "processing",
+                "shipped",
+                "delivered",
+                "canceled",
+                "refunded"
+              ]
+            },
+            "required": false,
+            "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "An order number, or the start of an email."
+            },
+            "required": false,
+            "description": "An order number, or the start of an email.",
+            "name": "q",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 60
+            },
+            "required": false,
+            "name": "perPage",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of orders.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminOrderSummary"
+                      }
+                    },
+                    "page": {
+                      "type": "object",
+                      "properties": {
+                        "page": {
+                          "type": "integer"
+                        },
+                        "perPage": {
+                          "type": "integer"
+                        },
+                        "total": {
+                          "type": "integer"
+                        },
+                        "totalPages": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "page",
+                        "perPage",
+                        "total",
+                        "totalPages"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "page"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/orders/{id}": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin orders"
+        ],
+        "summary": "One order, with its payment record, history and available actions.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The order as it now stands.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "order": {
+                          "$ref": "#/components/schemas/AdminOrder"
+                        }
+                      },
+                      "required": [
+                        "order"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/orders/{id}/status": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin orders"
+        ],
+        "summary": "Move an order forward: processing, shipped, delivered.",
+        "description": "Shipping consumes the reserved stock in the same transaction as the status change, and is claimed in the same write, so two presses ship once. There is no paid → shipped edge.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string",
+                    "enum": [
+                      "processing",
+                      "shipped",
+                      "delivered"
+                    ]
+                  },
+                  "note": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "to"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The order as it now stands.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "order": {
+                          "$ref": "#/components/schemas/AdminOrder"
+                        }
+                      },
+                      "required": [
+                        "order"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The order is not in a state this action applies to. `details.status` names the state it is in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/orders/{id}/cancel": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin orders"
+        ],
+        "summary": "Cancel an unpaid order and return its stock. Requires step-up.",
+        "description": "Unpaid orders only. A paid order that should not ship is refunded instead.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "note": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The order as it now stands.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "order": {
+                          "$ref": "#/components/schemas/AdminOrder"
+                        }
+                      },
+                      "required": [
+                        "order"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "STEP_UP_REQUIRED — the session is valid, but its last verified code is more than 12 hours old. Verify a code through /api/auth/step-up and retry; the session survives.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The order is not in a state this action applies to. `details.status` names the state it is in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/orders/{id}/refund": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin orders"
+        ],
+        "summary": "Record a refund issued in the provider’s dashboard. Requires step-up.",
+        "description": "**This does not move money.** It records that the money was returned, with a required note, and puts any still-held stock back on the shelf.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "note": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "note"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The order as it now stands.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "order": {
+                          "$ref": "#/components/schemas/AdminOrder"
+                        }
+                      },
+                      "required": [
+                        "order"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "STEP_UP_REQUIRED — the session is valid, but its last verified code is more than 12 hours old. Verify a code through /api/auth/step-up and retry; the session survives.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The order is not in a state this action applies to. `details.status` names the state it is in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The body failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/orders/{id}/reconcile": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin orders"
+        ],
+        "summary": "Ask the provider what happened, and settle the order if it was paid.",
+        "description": "The same reconcileOrderWithProvider the return page uses, funnelling into the same markOrderPaid. Safe to press any number of times.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What the provider said, and the order afterwards.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "outcome": {
+                          "type": "string",
+                          "enum": [
+                            "paid",
+                            "already_settled",
+                            "not_found",
+                            "amount_mismatch",
+                            "nothing_to_do"
+                          ]
+                        },
+                        "reason": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "order": {
+                          "$ref": "#/components/schemas/AdminOrder"
+                        }
+                      },
+                      "required": [
+                        "outcome",
+                        "reason",
+                        "order"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The provider did not answer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/customers": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin customers"
+        ],
+        "summary": "Everyone who has signed in, newest first.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The start of an email address."
+            },
+            "required": false,
+            "description": "The start of an email address.",
+            "name": "q",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 60
+            },
+            "required": false,
+            "name": "perPage",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of customers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CustomerSummary"
+                      }
+                    },
+                    "page": {
+                      "type": "object",
+                      "properties": {
+                        "page": {
+                          "type": "integer"
+                        },
+                        "perPage": {
+                          "type": "integer"
+                        },
+                        "total": {
+                          "type": "integer"
+                        },
+                        "totalPages": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "page",
+                        "perPage",
+                        "total",
+                        "totalPages"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "page"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/customers/{id}": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin customers"
+        ],
+        "summary": "One customer.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The customer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CustomerDetail"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/customers/{id}/revoke-sessions": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin customers"
+        ],
+        "summary": "Sign a customer out of every device, now.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sessions ended.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "revoked": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "revoked"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "That is the caller’s own account.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/customers/{id}/roles": {
+      "put": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin customers"
+        ],
+        "summary": "Grant or remove the admin role. Requires step-up.",
+        "description": "Either direction ends all of the person’s sessions: for a grant, that is the session rotation a privilege change requires, performed on a browser the admin does not hold.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "admin": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "admin"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The customer now.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "changed": {
+                          "type": "boolean"
+                        },
+                        "customer": {
+                          "$ref": "#/components/schemas/CustomerDetail"
+                        }
+                      },
+                      "required": [
+                        "changed",
+                        "customer"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An admin cannot change their own role.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "STEP_UP_REQUIRED — the session is valid, but its last verified code is more than 12 hours old. Verify a code through /api/auth/step-up and retry; the session survives.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The address is on ADMIN_EMAILS and would be re-granted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/storefront/{handle}": {
+      "get": {
+        "tags": [
+          "Storefront"
+        ],
+        "summary": "The composed page, as published.",
+        "description": "Only ever the published version — or, before anything is published, the built-in default (version null). Every product and category reference is resolved as it stands now; a reference that has gone stale is left out rather than failing the page.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "home"
+              ]
+            },
+            "required": true,
+            "name": "handle",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The page.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "handle": {
+                          "type": "string",
+                          "enum": [
+                            "home"
+                          ]
+                        },
+                        "version": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        },
+                        "publishedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "sections": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/ResolvedSection"
+                          }
+                        }
+                      },
+                      "required": [
+                        "handle",
+                        "version",
+                        "publishedAt",
+                        "sections"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/storefront/{handle}": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin storefront"
+        ],
+        "summary": "The composer’s state: what is live, the draft, and the history.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "home"
+              ]
+            },
+            "required": true,
+            "name": "handle",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The page’s versions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "handle": {
+                          "type": "string",
+                          "enum": [
+                            "home"
+                          ]
+                        },
+                        "published": {
+                          "allOf": [
+                            {
+                              "$ref": "#/components/schemas/StorefrontLayout"
+                            },
+                            {
+                              "type": [
+                                "object",
+                                "null"
+                              ]
+                            }
+                          ]
+                        },
+                        "draft": {
+                          "allOf": [
+                            {
+                              "$ref": "#/components/schemas/StorefrontLayout"
+                            },
+                            {
+                              "type": [
+                                "object",
+                                "null"
+                              ]
+                            }
+                          ]
+                        },
+                        "versions": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/StorefrontVersion"
+                          }
+                        }
+                      },
+                      "required": [
+                        "handle",
+                        "published",
+                        "draft",
+                        "versions"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/storefront/{handle}/draft": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin storefront"
+        ],
+        "summary": "Open the draft, creating it from what is live if there is none.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "home"
+              ]
+            },
+            "required": true,
+            "name": "handle",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The version.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/StorefrontLayout"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin storefront"
+        ],
+        "summary": "Save the draft against the revision it was loaded at.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "home"
+              ]
+            },
+            "required": true,
+            "name": "handle",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "sections": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/StorefrontSection"
+                    },
+                    "maxItems": 12
+                  },
+                  "note": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "sections",
+                  "revision"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The version.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/StorefrontLayout"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Saved by someone else since; `details.revision` is the current one.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The body failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin storefront"
+        ],
+        "summary": "Throw the draft away.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "home"
+              ]
+            },
+            "required": true,
+            "name": "handle",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Discarded."
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/storefront/{handle}/draft/publish": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin storefront"
+        ],
+        "summary": "Publish the draft. Requires step-up.",
+        "description": "Retires the live version and promotes the draft in one transaction. A second published version per handle is refused by a unique index, so concurrent publishes produce one.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "home"
+              ]
+            },
+            "required": true,
+            "name": "handle",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "revision": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "revision"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The version.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/StorefrontLayout"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "STEP_UP_REQUIRED — the session is valid, but its last verified code is more than 12 hours old. Verify a code through /api/auth/step-up and retry; the session survives.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The draft changed or was published since it was loaded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The body failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/storefront/{handle}/versions/{version}": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin storefront"
+        ],
+        "summary": "One version, whole.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "home"
+              ]
+            },
+            "required": true,
+            "name": "handle",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "required": true,
+            "name": "version",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The version.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/StorefrontLayout"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/storefront/{handle}/versions/{version}/preview": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin storefront"
+        ],
+        "summary": "A version resolved exactly as the storefront would render it, with warnings.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "home"
+              ]
+            },
+            "required": true,
+            "name": "handle",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "required": true,
+            "name": "version",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The resolved page.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "version": {
+                          "$ref": "#/components/schemas/StorefrontLayout"
+                        },
+                        "sections": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/ResolvedSection"
+                          }
+                        },
+                        "warnings": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "version",
+                        "sections",
+                        "warnings"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/storefront/{handle}/versions/{version}/publish": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin storefront"
+        ],
+        "summary": "Put an earlier version back on the page. This is rollback. Requires step-up.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "home"
+              ]
+            },
+            "required": true,
+            "name": "handle",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "required": true,
+            "name": "version",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The version.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/StorefrontLayout"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "STEP_UP_REQUIRED — the session is valid, but its last verified code is more than 12 hours old. Verify a code through /api/auth/step-up and retry; the session survives.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with something that already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/dashboard": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin console"
+        ],
+        "summary": "What needs a person today.",
+        "responses": {
+          "200": {
+            "description": "The queues.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Dashboard"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/audit": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin console"
+        ],
+        "summary": "Every admin mutation that succeeded, newest first.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "targetId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 60
+            },
+            "required": false,
+            "name": "perPage",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of the log.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AuditEntry"
+                      }
+                    },
+                    "page": {
+                      "type": "object",
+                      "properties": {
+                        "page": {
+                          "type": "integer"
+                        },
+                        "perPage": {
+                          "type": "integer"
+                        },
+                        "total": {
+                          "type": "integer"
+                        },
+                        "totalPages": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "page",
+                        "perPage",
+                        "total",
+                        "totalPages"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "page"
+                  ]
                 }
               }
             }

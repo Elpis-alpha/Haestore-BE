@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 import { badRequest, conflict, notFound } from '../../lib/errors.js';
 import { canBeVariantAxis, hasOptions, type AttributeType } from './attribute-types.js';
 import { AttributeDefinition, type AttributeDefinitionDoc } from './attribute-definition.model.js';
+import { Category } from './category.model.js';
+import { Product } from './product.model.js';
 import { bumpDefsVersion } from './catalog-versions.js';
 import { appendOutbox, type OutboxEntry } from '../../search/outbox.model.js';
 import type {
@@ -184,6 +186,37 @@ export async function restoreAttributeDefinition(id: string): Promise<AttributeD
 export async function listAttributeDefinitions(options: { includeArchived?: boolean } = {}) {
   const filter = options.includeArchived ? {} : { archivedAt: { $exists: false } };
   return AttributeDefinition.find(filter).sort({ label: 1 }).lean();
+}
+
+/**
+ * How widely each attribute is used, keyed by attribute key.
+ *
+ * What the attribute builder shows beside every definition, because it is what an admin
+ * needs to know before touching one: archiving an attribute bound to four categories and
+ * carried by forty products is a different decision from archiving one nobody uses. Two
+ * aggregations over the whole catalogue, which is a price this page can pay and the
+ * storefront never does.
+ */
+export async function attributeUsage(): Promise<
+  Record<string, { categories: number; products: number }>
+> {
+  const [bindings, values] = await Promise.all([
+    Category.aggregate<{ _id: string; count: number }>([
+      { $unwind: '$attributeBindings' },
+      { $group: { _id: '$attributeBindings.key', count: { $sum: 1 } } },
+    ]),
+    Product.aggregate<{ _id: string; count: number }>([
+      { $unwind: '$attributes' },
+      { $group: { _id: '$attributes.key', count: { $sum: 1 } } },
+    ]),
+  ]);
+
+  const usage: Record<string, { categories: number; products: number }> = {};
+  for (const row of bindings) usage[row._id] = { categories: row.count, products: 0 };
+  for (const row of values) {
+    usage[row._id] = { categories: usage[row._id]?.categories ?? 0, products: row.count };
+  }
+  return usage;
 }
 
 export async function getAttributeDefinition(id: string) {

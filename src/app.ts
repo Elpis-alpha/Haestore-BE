@@ -9,7 +9,7 @@ import { originGuard } from './middleware/origin-guard.js';
 import { errorHandler, notFoundHandler } from './middleware/error.js';
 import { healthRouter } from './modules/health/health.routes.js';
 import { catalogRouter } from './modules/catalog/catalog.routes.js';
-import { adminCatalogRouter } from './modules/catalog/admin-catalog.routes.js';
+import { adminRouter } from './modules/admin/admin.routes.js';
 import { authRouter } from './modules/auth/auth.routes.js';
 import { devOutboxRouter } from './modules/auth/dev-outbox.routes.js';
 import { cartRouter } from './modules/cart/cart.routes.js';
@@ -17,6 +17,7 @@ import { checkoutRouter } from './modules/checkout/checkout.routes.js';
 import { orderRouter } from './modules/order/order.routes.js';
 import { webhooksRouter } from './modules/payments/webhooks.routes.js';
 import { wishlistRouter } from './modules/wishlist/wishlist.routes.js';
+import { storefrontRouter } from './modules/storefront/storefront.routes.js';
 import { attachSession } from './middleware/session.js';
 import './middleware/auth-context.js';
 
@@ -86,9 +87,11 @@ export function createApp(): Express {
   // and a guest reads their one order through the checkout router's claim-token route.
   app.use('/api/checkout', checkoutRouter);
   app.use('/api/orders', orderRouter);
-  // Every admin router is gated inside itself by requireRole, mounted once at the top
-  // of the router rather than per handler.
-  app.use('/api/admin/catalog', adminCatalogRouter);
+  // The composed front page. Public, and only ever the published version.
+  app.use('/api/storefront', storefrontRouter);
+  // Every admin route sits under one router, which applies requireRole and the audit
+  // middleware once for all of them. See modules/admin/admin.routes.ts.
+  app.use('/api/admin', adminRouter);
 
   // Not mounted at all in production, so the sign-in codes it exposes cannot be
   // reached by a path that merely refuses. The router carries its own guard as well.

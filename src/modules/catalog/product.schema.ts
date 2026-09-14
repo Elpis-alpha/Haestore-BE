@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { patchOf } from '../../lib/zod-patch.js';
 import { objectIdSchema } from './category.schema.js';
 
 const moneySchema = z.object({
@@ -69,7 +70,8 @@ export const createProductSchema = z.object({
   images: z.array(productImageSchema).max(24).default([]),
 });
 
-export const updateProductSchema = createProductSchema.partial().omit({ categoryId: true });
+/** No defaults: see lib/zod-patch.ts for what `.partial()` did here before Phase 8. */
+export const updateProductSchema = patchOf(createProductSchema.omit({ categoryId: true }));
 
 /** Recategorising re-validates every attribute, so it is its own operation. */
 export const recategoriseProductSchema = z.object({ categoryId: objectIdSchema });

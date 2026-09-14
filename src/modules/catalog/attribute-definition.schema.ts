@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { patchOf } from '../../lib/zod-patch.js';
 import { ATTRIBUTE_TYPES, FILTER_UIS, RESERVED_ATTRIBUTE_KEYS } from './attribute-types.js';
 
 /**
@@ -73,9 +74,9 @@ export const createAttributeDefinitionSchema = z.object({
  * service free to forget the check. Leaving them out of the type means a rename is not
  * expressible in the API at all, which is the actual policy.
  */
-export const updateAttributeDefinitionSchema = createAttributeDefinitionSchema
-  .omit({ key: true, type: true })
-  .partial();
+export const updateAttributeDefinitionSchema = patchOf(
+  createAttributeDefinitionSchema.omit({ key: true, type: true }),
+);
 
 export type CreateAttributeDefinitionInput = z.infer<typeof createAttributeDefinitionSchema>;
 export type UpdateAttributeDefinitionInput = z.infer<typeof updateAttributeDefinitionSchema>;

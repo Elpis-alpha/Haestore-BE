@@ -195,13 +195,43 @@ catalogRouter.get('/products/:slug', async (req, res) => {
   // Attributes are already denormalised with their display values, so the specification
   // table needs no definition lookup. The effective set only supplies grouping order.
   const groupOrder = new Map(set.attributes.map((a, i) => [a.key, i]));
+  const labels = new Map(set.attributes.map((a) => [a.key, a.label]));
 
   res.json({
     data: {
       ...product,
-      attributes: [...product.attributes].sort(
-        (a, b) => (groupOrder.get(a.key) ?? 999) - (groupOrder.get(b.key) ?? 999),
-      ),
+      // Each with its definition's current label, so the specification table names every
+      // row in the admin's words — not only the filterable ones the category endpoint lists.
+      attributes: [...product.attributes]
+        .sort((a, b) => (groupOrder.get(a.key) ?? 999) - (groupOrder.get(b.key) ?? 999))
+        .map((attribute) => {
+          const label = labels.get(attribute.key);
+          return label ? { ...attribute, label } : attribute;
+        }),
+      /**
+       * Each axis this product sells along, with its label and its options' labels and
+       * swatches. A variant's `axisValues` carry the admin's slugs — `whole-bean` — and
+       * until Phase 8 the product page recovered names from the category's *filter* list,
+       * which omits any axis that is not filterable and fell back to prettifying the slug.
+       * The effective set is already loaded above and cached by version, so this costs
+       * nothing and closes the gap FRONTEND.md recorded.
+       */
+      axes: product.variantAxes.flatMap((key) => {
+        const attribute = set.attributes.find((a) => a.key === key);
+        if (!attribute) return [];
+        return [
+          {
+            key,
+            label: attribute.label,
+            ...(attribute.unit ? { unit: attribute.unit } : {}),
+            options: attribute.options.map((option) => ({
+              value: option.value,
+              label: option.label,
+              ...(option.swatchHex ? { swatchHex: option.swatchHex } : {}),
+            })),
+          },
+        ];
+      }),
       // Internal review state is never part of a public response.
       validationIssues: undefined,
       needsAttention: undefined,

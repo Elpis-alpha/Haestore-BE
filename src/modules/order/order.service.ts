@@ -3,8 +3,9 @@ import { Order, type OrderDoc } from './order.model.js';
 import { appendOrderOutbox } from './order-outbox.model.js';
 import { predecessorsOf, type OrderStatus } from './order-status.js';
 import { normaliseOrderNumber } from './order-number.js';
-import { releaseAll, type ReservationRequest } from '../checkout/reservation.js';
+import { consumeAll, releaseAll, type ReservationRequest } from '../checkout/reservation.js';
 import { notFound } from '../../lib/errors.js';
+import { escapeRegExp } from '../../lib/regex.js';
 import { logger } from '../../lib/logger.js';
 import type { Money } from '../../lib/money.js';
 
@@ -41,9 +42,23 @@ export async function transition(
   next: OrderStatus,
   by: string,
   note?: string,
+  options: {
+    /**
+     * Narrows the legal predecessors further, never widens them. The admin console
+     * cancels only unpaid orders although the machine allows canceling a paid one, and
+     * that narrowing belongs in the same filter as the machine rather than in an `if`
+     * in front of it.
+     */
+    from?: readonly OrderStatus[];
+  } = {},
 ): Promise<TransitionResult> {
+  const { from } = options;
+  const allowed = from
+    ? predecessorsOf(next).filter((status) => from.includes(status))
+    : predecessorsOf(next);
+
   const order = await Order.findOneAndUpdate(
-    { _id: orderId, status: { $in: predecessorsOf(next) } },
+    { _id: orderId, status: { $in: allowed } },
     {
       $set: { status: next, ...(next === 'canceled' ? { canceledAt: new Date() } : {}) },
       $push: { history: { status: next, at: new Date(), by, ...(note ? { note } : {}) } },
@@ -190,8 +205,92 @@ export async function cancelOrder(
   orderId: string | mongoose.Types.ObjectId,
   by: string,
   note?: string,
+  options: { from?: readonly OrderStatus[] } = {},
 ): Promise<TransitionResult> {
-  const result = await transition(orderId, 'canceled', by, note);
+  const result = await transition(orderId, 'canceled', by, note, options);
+  if (!result.moved) return result;
+
+  await releaseReservation(result.order, by);
+  return result;
+}
+
+/**
+ * Hands an order to the carrier, and turns its hold into stock that has left the building.
+ *
+ * **The status change and the stock consumption are one transaction, and the consumption
+ * is claimed in the same write as the status.** The update flips `status` to `shipped`
+ * and `stockReserved` to false together and returns the document as it was *before*, so
+ * "was the stock still held?" is answered by the write that took it — not by a read that
+ * a second press of the button could also pass. Two admins shipping the same order at
+ * once produce one shipment and one decrement of `onHand`; the other gets a `null`, which
+ * is the machine saying the order is already shipped.
+ *
+ * This is the one place `onHand` moves outside an admin correction, which is why
+ * `consumeAll` waited from Phase 7 for this caller rather than being wired to something
+ * earlier.
+ */
+export async function shipOrder(
+  orderId: string | mongoose.Types.ObjectId,
+  by: string,
+  note?: string,
+): Promise<TransitionResult> {
+  const outcome: { order: OrderDoc | null } = { order: null };
+
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      outcome.order = null;
+
+      const before = await Order.findOneAndUpdate(
+        { _id: orderId, status: { $in: predecessorsOf('shipped') } },
+        {
+          $set: { status: 'shipped', stockReserved: false },
+          $push: { history: { status: 'shipped', at: new Date(), by, ...(note ? { note } : {}) } },
+        },
+        { new: false, session },
+      );
+      if (!before) return;
+
+      if (before.stockReserved) await consumeAll(reservationsOf(before), session);
+
+      outcome.order = await Order.findById(before._id).session(session);
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  if (outcome.order) {
+    logger.info(
+      { orderId: String(outcome.order._id), orderNumber: outcome.order.orderNumber, by },
+      'order: shipped, reserved stock consumed',
+    );
+    return { moved: true, order: outcome.order };
+  }
+
+  const exists = await Order.exists({ _id: orderId });
+  return { moved: false, reason: exists ? 'illegal_transition' : 'not_found' };
+}
+
+/**
+ * Records that an order's money has been returned.
+ *
+ * **It does not return the money.** This shop reaches its providers for three and five
+ * operations respectively (ADR-012), and a refund would be a new kind of call with its
+ * own idempotency story — so the refund itself is issued in the Stripe or PayPal
+ * dashboard, and this is the record that it was. The note is required for exactly that
+ * reason: it is where the admin says so.
+ *
+ * Stock still held for the order goes back on the shelf, because the goods never left.
+ * A shipped or delivered order has no hold, and the release is a no-op: whether returned
+ * goods are fit to sell again is a decision about the goods, made by a person holding
+ * them, and is a stock correction on the product rather than a side effect here.
+ */
+export async function recordRefund(
+  orderId: string | mongoose.Types.ObjectId,
+  by: string,
+  note: string,
+): Promise<TransitionResult> {
+  const result = await transition(orderId, 'refunded', by, note);
   if (!result.moved) return result;
 
   await releaseReservation(result.order, by);
@@ -258,6 +357,47 @@ export async function listOrdersForUser(
       .skip((page - 1) * perPage)
       .limit(perPage)
       .lean(),
+    Order.countDocuments(filter),
+  ]);
+
+  return { orders, page, perPage, total, totalPages: Math.max(Math.ceil(total / perPage), 1) };
+}
+
+/**
+ * The admin order list.
+ *
+ * `q` is either an order number or the start of an email address, tried together — an
+ * admin with a customer on the phone has one or the other and should not have to say
+ * which. The order number goes through the same normaliser the shopper's own lookup
+ * uses, so `hae cj0rthpk` read down a phone line finds the order.
+ *
+ * `.skip()` pagination, capped at 60, like the account history: this list is read a page
+ * or two deep by a person, not walked by a crawler.
+ */
+export async function listOrdersForAdmin(options: {
+  status?: OrderStatus;
+  q?: string;
+  page: number;
+  perPage: number;
+}) {
+  const filter: Record<string, unknown> = {};
+  if (options.status) filter.status = options.status;
+  if (options.q) {
+    const q = options.q.trim();
+    filter.$or = [
+      { orderNumber: normaliseOrderNumber(q) },
+      { email: { $regex: `^${escapeRegExp(q.toLowerCase())}` } },
+    ];
+  }
+
+  const perPage = Math.min(Math.max(options.perPage, 1), 60);
+  const page = Math.max(options.page, 1);
+
+  const [orders, total] = await Promise.all([
+    Order.find(filter)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * perPage)
+      .limit(perPage),
     Order.countDocuments(filter),
   ]);
 

@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { requireRole } from '../../middleware/require-role.js';
 import { requireStepUp } from '../../middleware/session.js';
 import {
   body,
@@ -18,6 +17,7 @@ import {
 } from './attribute-definition.schema.js';
 import {
   archiveAttributeDefinition,
+  attributeUsage,
   createAttributeDefinition,
   getAttributeDefinition,
   listAttributeDefinitions,
@@ -59,6 +59,11 @@ import {
   updateProduct,
 } from './product.service.js';
 import { Product } from './product.model.js';
+import {
+  adminProductListQuerySchema,
+  listProductsForAdmin,
+  type AdminProductListQuery,
+} from './admin-product.service.js';
 import { resolveEffectiveAttributes } from './effective-attributes.js';
 import { planVariantGrid } from './variants.js';
 import { notFound } from '../../lib/errors.js';
@@ -66,13 +71,11 @@ import { notFound } from '../../lib/errors.js';
 /**
  * The admin catalogue console.
  *
- * `requireRole('admin')` is applied to the whole router on the line below, once. Not
- * per handler — that is the arrangement where one forgotten line opens the surface and
- * nothing notices.
+ * Gated by `requireRole('admin')` on the admin router it is mounted under — once, above
+ * every admin router, rather than here. Phase 2 put the gate on this router, which was
+ * right while it was the only one; see admin/admin.routes.ts for why it moved.
  */
-export const adminCatalogRouter = Router();
-
-adminCatalogRouter.use(requireRole('admin'));
+export const adminCatalogRouter: Router = Router();
 
 /* -------------------------------------------------------- attribute definitions -- */
 
@@ -94,6 +97,11 @@ adminCatalogRouter.post(
       .json({ data: await createAttributeDefinition(body<CreateAttributeDefinitionInput>(req)) });
   },
 );
+
+/** Declared before `/attributes/:id`, which would otherwise read "usage" as an id. */
+adminCatalogRouter.get('/attributes/usage', async (_req, res) => {
+  res.json({ data: await attributeUsage() });
+});
 
 adminCatalogRouter.get('/attributes/:id', async (req, res) => {
   res.json({ data: await getAttributeDefinition(idParam(req)) });
@@ -194,6 +202,14 @@ adminCatalogRouter.get('/categories/:id/effective-attributes', async (req, res) 
 
 /* -------------------------------------------------------------------- products -- */
 
+adminCatalogRouter.get(
+  '/products',
+  validateQuery(adminProductListQuerySchema),
+  async (req, res) => {
+    res.json(await listProductsForAdmin(query<AdminProductListQuery>(req)));
+  },
+);
+
 adminCatalogRouter.post('/products', validateBody(createProductSchema), async (req, res) => {
   res.status(201).json({ data: await createProduct(body<CreateProductInput>(req)) });
 });
@@ -252,28 +268,53 @@ adminCatalogRouter.post(
     const existing = new Map(
       product.variants.map((v) => [v.axisValues.map((a) => `${a.key}:${a.value}`).join('|'), v]),
     );
-    const fallbackPrice = product.variants[0]?.price ?? { amount: 0, currency: 'USD' };
+    const first = product.variants[0];
+    const fallbackPrice = first
+      ? { amount: first.price.amount, currency: first.price.currency }
+      : { amount: 0, currency: 'USD' };
 
-    const merged = plan.variants.map((generated, index) => {
+    const variants = plan.variants.map((generated, index) => {
       const key = generated.axisValues.map((a) => `${a.key}:${a.value}`).join('|');
       const kept = existing.get(key);
       return {
         sku: kept?.sku ?? generated.sku,
         axisValues: generated.axisValues,
-        price: kept?.price ?? fallbackPrice,
-        stock: kept?.stock ?? { onHand: 0, reserved: 0, available: 0 },
-        status: kept?.status ?? 'active',
+        price: kept ? { amount: kept.price.amount, currency: kept.price.currency } : fallbackPrice,
+        ...(kept?.compareAtPrice
+          ? {
+              compareAtPrice: {
+                amount: kept.compareAtPrice.amount,
+                currency: kept.compareAtPrice.currency,
+              },
+            }
+          : {}),
+        stock: {
+          onHand: kept?.stock.onHand ?? 0,
+          lowStockThreshold: kept?.stock.lowStockThreshold ?? 3,
+          backorderable: kept?.stock.backorderable ?? false,
+        },
+        ...(kept?.weightGrams != null ? { weightGrams: kept.weightGrams } : {}),
+        imagePublicIds: kept ? [...kept.imagePublicIds] : [],
+        status: kept?.status ?? ('active' as const),
         position: index,
       };
     });
 
-    product.set(
-      'variantAxes',
-      input.axes.map((a) => a.key),
-    );
-    product.set('variants', merged);
-    await product.save();
+    /**
+     * Through `updateProduct`, not `product.save()`.
+     *
+     * Until Phase 8 this route set the variants and saved the document directly, which
+     * skipped the whole write pipeline: no outbox row (so the index never learned the new
+     * grid), no recomputed `priceRange` or `inStock` (so the listing card kept the old
+     * ones), and no `available` maintained from `onHand` (so every generated variant was
+     * unsellable until someone edited it again). Found while deciding whether the console
+     * could call it.
+     */
+    const updated = await updateProduct(String(product._id), {
+      variantAxes: input.axes.map((a) => a.key),
+      variants,
+    });
 
-    res.json({ data: { count: plan.count, warn: plan.warn, product } });
+    res.json({ data: { count: plan.count, warn: plan.warn, product: updated } });
   },
 );

@@ -29,6 +29,19 @@ import {
   verifyCodeSchema,
 } from '../modules/auth/auth.schema.js';
 import {
+  advanceOrderSchema,
+  cancelOrderSchema,
+  refundOrderSchema,
+} from '../modules/order/admin-order.schema.js';
+import { ADMIN_ORDER_ACTIONS, ORDER_STATUSES } from '../modules/order/order-status.js';
+import {
+  heroSectionSchema,
+  noteSectionSchema,
+  productRowSectionSchema,
+  publishDraftSchema,
+  shelvesSectionSchema,
+} from '../modules/storefront/storefront.schema.js';
+import {
   addLineSchema,
   addWishSchema,
   moveLineSchema,
@@ -187,6 +200,14 @@ const productAttributeSchema = registry.register(
   z
     .object({
       key: z.string(),
+      label: z
+        .string()
+        .optional()
+        .openapi({
+          description:
+            'The definition’s current label. Absent where the attribute no longer applies to the ' +
+            'product’s category.',
+        }),
       type: z.enum(ATTRIBUTE_TYPES),
       valueString: z.string().optional(),
       valueStrings: z.array(z.string()).optional(),
@@ -246,6 +267,22 @@ const productSchema = registry.register(
       variantAxes: z.array(z.string()),
       variants: z.array(variantSchema),
       defaultVariantId: z.string().optional(),
+      axes: z
+        .array(
+          z.object({
+            key: z.string(),
+            label: z.string(),
+            unit: z.string().optional(),
+            options: z.array(
+              z.object({ value: z.string(), label: z.string(), swatchHex: z.string().optional() }),
+            ),
+          }),
+        )
+        .openapi({
+          description:
+            'Each axis in variantAxes with its label and its values’ labels and swatches, ' +
+            'so a picker never has to show the raw slug a variant stores.',
+        }),
     })
     .openapi('Product'),
 );
@@ -263,7 +300,22 @@ const errors = {
   404: json(errorSchema, 'Not found, or not visible to this caller.'),
   409: json(errorSchema, 'Conflicts with something that already exists.'),
   422: json(errorSchema, 'The body failed validation.'),
+  stepUp: json(
+    errorSchema,
+    'STEP_UP_REQUIRED — the session is valid, but its last verified code is more than 12 ' +
+      'hours old. Verify a code through /api/auth/step-up and retry; the session survives.',
+  ),
 };
+
+const pageSchema = z.object({
+  page: z.number().int(),
+  perPage: z.number().int(),
+  total: z.number().int(),
+  totalPages: z.number().int(),
+});
+
+const paged = <T extends z.ZodTypeAny>(item: T) =>
+  z.object({ data: z.array(item), page: pageSchema });
 
 /* -------------------------------------------------------------------- auth -- */
 
@@ -962,12 +1014,126 @@ registry.registerPath({
 
 const admin = { security: [{ sessionCookie: [] }], tags: ['Admin catalogue'] };
 
+const attributeDefinitionSchema = registry.register(
+  'AttributeDefinition',
+  z
+    .object({
+      _id: z.string(),
+      key: z.string().openapi({ description: 'Permanent. See the create route.' }),
+      label: z.string(),
+      description: z.string().optional(),
+      type: z.enum(ATTRIBUTE_TYPES).openapi({ description: 'Permanent.' }),
+      unit: z.string().optional(),
+      options: z.array(attributeOptionSchema),
+      isFilterable: z.boolean(),
+      isSearchable: z.boolean(),
+      isVariantAxis: z.boolean(),
+      filterUi: z.enum(FILTER_UIS),
+      validation: z.object({
+        min: z.number().optional(),
+        max: z.number().optional(),
+        step: z.number().optional(),
+        maxLength: z.number().optional(),
+        requiredByDefault: z.boolean().optional(),
+      }),
+      archivedAt: z.string().optional(),
+      createdAt: z.string(),
+      updatedAt: z.string(),
+    })
+    .openapi('AttributeDefinition'),
+);
+
+const validationIssueSchema = z.object({
+  key: z.string(),
+  code: z.string(),
+  message: z.string(),
+});
+
+const adminCategorySchema = registry.register(
+  'AdminCategory',
+  categorySchema
+    .extend({
+      status: z.enum(['active', 'hidden']),
+      validationMode: z.enum(['lenient', 'strict']),
+      attributeBindings: z.array(
+        z.object({
+          defId: z.string(),
+          key: z.string(),
+          required: z.boolean(),
+          order: z.number().int(),
+          group: z.string().optional(),
+        }),
+      ),
+      suppressedKeys: z.array(z.string()),
+      children: z.array(z.record(z.string(), z.unknown())).openapi({
+        description:
+          'AdminCategory nodes, recursively. Described loosely because the ' +
+          'document format cannot express the recursion without a reference cycle.',
+      }),
+    })
+    .openapi('AdminCategory'),
+);
+
+const adminProductSchema = registry.register(
+  'AdminProduct',
+  productSchema
+    .omit({ axes: true })
+    .extend({
+      needsAttention: z.boolean(),
+      validationIssues: z.array(validationIssueSchema),
+      createdAt: z.string(),
+      updatedAt: z.string(),
+    })
+    .openapi('AdminProduct'),
+);
+
+const adminProductSummarySchema = registry.register(
+  'AdminProductSummary',
+  z
+    .object({
+      id: z.string(),
+      title: z.string(),
+      slug: z.string(),
+      status: z.enum(['draft', 'active', 'archived']),
+      category: z.object({ id: z.string(), name: z.string(), path: z.string() }).nullable(),
+      priceRange: z
+        .object({ min: z.number().int(), max: z.number().int(), currency: z.string() })
+        .nullable(),
+      inStock: z.boolean(),
+      variantCount: z.number().int(),
+      available: z.number().int(),
+      needsAttention: z.boolean(),
+      issueCount: z.number().int(),
+      imagePublicId: z.string().nullable(),
+      updatedAt: z.string(),
+    })
+    .openapi('AdminProductSummary'),
+);
+
+const effectiveAttributeSetSchema = registry.register(
+  'EffectiveAttributeSet',
+  z
+    .object({
+      categoryId: z.string(),
+      categoryPath: z.string(),
+      validationMode: z.enum(['lenient', 'strict']),
+      attributes: z.array(effectiveAttributeSchema),
+    })
+    .openapi('EffectiveAttributeSet'),
+);
+
+const idParams = z.object({ id: z.string() });
+
 registry.registerPath({
   ...admin,
   method: 'get',
   path: '/api/admin/catalog/attributes',
   summary: 'Every attribute definition.',
-  responses: { 200: json(envelope(z.array(z.unknown())), 'Definitions.'), 401: errors[401] },
+  request: { query: z.object({ includeArchived: z.enum(['true', 'false']).optional() }) },
+  responses: {
+    200: json(envelope(z.array(attributeDefinitionSchema)), 'Definitions.'),
+    401: errors[401],
+  },
 });
 
 registry.registerPath({
@@ -983,7 +1149,7 @@ registry.registerPath({
     body: { content: { 'application/json': { schema: createAttributeDefinitionSchema } } },
   },
   responses: {
-    201: json(envelope(z.unknown()), 'Created.'),
+    201: json(envelope(attributeDefinitionSchema), 'Created.'),
     409: errors[409],
     422: errors[422],
   },
@@ -998,7 +1164,7 @@ registry.registerPath({
     params: z.object({ id: z.string() }),
     body: { content: { 'application/json': { schema: updateAttributeDefinitionSchema } } },
   },
-  responses: { 200: json(envelope(z.unknown()), 'Updated.'), 404: errors[404] },
+  responses: { 200: json(envelope(attributeDefinitionSchema), 'Updated.'), 404: errors[404] },
 });
 
 registry.registerPath({
@@ -1007,7 +1173,10 @@ registry.registerPath({
   path: '/api/admin/catalog/categories',
   summary: 'Create a category.',
   request: { body: { content: { 'application/json': { schema: createCategorySchema } } } },
-  responses: { 201: json(envelope(categorySchema), 'Created.'), 409: errors[409] },
+  responses: {
+    201: json(envelope(adminCategorySchema.omit({ children: true })), 'Created.'),
+    409: errors[409],
+  },
 });
 
 registry.registerPath({
@@ -1019,7 +1188,10 @@ registry.registerPath({
     params: z.object({ id: z.string() }),
     body: { content: { 'application/json': { schema: updateCategorySchema } } },
   },
-  responses: { 200: json(envelope(categorySchema), 'Updated.'), 404: errors[404] },
+  responses: {
+    200: json(envelope(adminCategorySchema.omit({ children: true })), 'Updated.'),
+    404: errors[404],
+  },
 });
 
 registry.registerPath({
@@ -1034,7 +1206,10 @@ registry.registerPath({
     params: z.object({ id: z.string() }),
     body: { content: { 'application/json': { schema: moveCategorySchema } } },
   },
-  responses: { 200: json(envelope(categorySchema), 'Moved.'), 400: errors[400] },
+  responses: {
+    200: json(envelope(adminCategorySchema.omit({ children: true })), 'Moved.'),
+    400: errors[400],
+  },
 });
 
 registry.registerPath({
@@ -1046,7 +1221,10 @@ registry.registerPath({
     params: z.object({ id: z.string() }),
     body: { content: { 'application/json': { schema: bindAttributeSchema } } },
   },
-  responses: { 200: json(envelope(categorySchema), 'Bound.'), 400: errors[400] },
+  responses: {
+    200: json(envelope(adminCategorySchema.omit({ children: true })), 'Bound.'),
+    400: errors[400],
+  },
 });
 
 registry.registerPath({
@@ -1058,7 +1236,10 @@ registry.registerPath({
     params: z.object({ id: z.string() }),
     body: { content: { 'application/json': { schema: suppressKeysSchema } } },
   },
-  responses: { 200: json(envelope(categorySchema), 'Updated.'), 404: errors[404] },
+  responses: {
+    200: json(envelope(adminCategorySchema.omit({ children: true })), 'Updated.'),
+    404: errors[404],
+  },
 });
 
 registry.registerPath({
@@ -1069,17 +1250,7 @@ registry.registerPath({
   description: 'What the product form renders from. Each says which ancestor contributed it.',
   request: { params: z.object({ id: z.string() }) },
   responses: {
-    200: json(
-      envelope(
-        z.object({
-          categoryId: z.string(),
-          categoryPath: z.string(),
-          validationMode: z.enum(['lenient', 'strict']),
-          attributes: z.array(effectiveAttributeSchema),
-        }),
-      ),
-      'The effective set.',
-    ),
+    200: json(envelope(effectiveAttributeSetSchema), 'The effective set.'),
     404: errors[404],
   },
 });
@@ -1095,7 +1266,7 @@ registry.registerPath({
     'mode a missing required attribute is reported on the product rather than refused.',
   request: { body: { content: { 'application/json': { schema: createProductSchema } } } },
   responses: {
-    201: json(envelope(productSchema), 'Created.'),
+    201: json(envelope(adminProductSchema), 'Created.'),
     400: errors[400],
     422: errors[422],
   },
@@ -1110,7 +1281,7 @@ registry.registerPath({
     params: z.object({ id: z.string() }),
     body: { content: { 'application/json': { schema: updateProductSchema } } },
   },
-  responses: { 200: json(envelope(productSchema), 'Updated.'), 404: errors[404] },
+  responses: { 200: json(envelope(adminProductSchema), 'Updated.'), 404: errors[404] },
 });
 
 registry.registerPath({
@@ -1122,7 +1293,7 @@ registry.registerPath({
     params: z.object({ id: z.string() }),
     body: { content: { 'application/json': { schema: recategoriseProductSchema } } },
   },
-  responses: { 200: json(envelope(productSchema), 'Moved.'), 400: errors[400] },
+  responses: { 200: json(envelope(adminProductSchema), 'Moved.'), 400: errors[400] },
 });
 
 registry.registerPath({
@@ -1141,10 +1312,153 @@ registry.registerPath({
   },
   responses: {
     200: json(
-      envelope(z.object({ count: z.number().int(), warn: z.boolean() })),
+      envelope(
+        z.object({
+          count: z.number().int(),
+          warn: z.boolean(),
+          variants: z
+            .array(
+              z.object({
+                sku: z.string(),
+                axisValues: z.array(z.object({ key: z.string(), value: z.string() })),
+              }),
+            )
+            .optional(),
+          product: adminProductSchema.optional(),
+        }),
+      ),
       'The plan, or the updated product.',
     ),
     400: errors[400],
+  },
+});
+
+registry.registerPath({
+  ...admin,
+  method: 'get',
+  path: '/api/admin/catalog/attributes/usage',
+  summary: 'How many categories bind, and how many products carry, each attribute key.',
+  responses: {
+    200: json(
+      envelope(
+        z.record(
+          z.string(),
+          z.object({ categories: z.number().int(), products: z.number().int() }),
+        ),
+      ),
+      'Usage by key.',
+    ),
+  },
+});
+
+registry.registerPath({
+  ...admin,
+  method: 'get',
+  path: '/api/admin/catalog/attributes/{id}',
+  summary: 'One attribute definition.',
+  request: { params: idParams },
+  responses: {
+    200: json(envelope(attributeDefinitionSchema), 'The definition.'),
+    404: errors[404],
+  },
+});
+
+for (const [verb, summary] of [
+  ['archive', 'Retire an attribute from forms and filters. Stored values stay renderable.'],
+  ['restore', 'Bring an archived attribute back.'],
+] as const) {
+  registry.registerPath({
+    ...admin,
+    method: 'post',
+    path: `/api/admin/catalog/attributes/{id}/${verb}`,
+    summary,
+    request: { params: idParams },
+    responses: {
+      200: json(envelope(attributeDefinitionSchema), 'The definition.'),
+      404: errors[404],
+    },
+  });
+}
+
+registry.registerPath({
+  ...admin,
+  method: 'get',
+  path: '/api/admin/catalog/categories',
+  summary: 'The whole category tree, hidden branches included.',
+  responses: {
+    200: json(envelope(z.array(adminCategorySchema)), 'Root nodes, each with children.'),
+  },
+});
+
+registry.registerPath({
+  ...admin,
+  method: 'delete',
+  path: '/api/admin/catalog/categories/{id}',
+  summary: 'Delete an empty category. Requires step-up.',
+  description:
+    'Refused with 409 while the category has sub-categories or products, which are named in ' +
+    'the message. Behind step-up because it cannot be undone.',
+  request: { params: idParams },
+  responses: {
+    204: { description: 'Deleted.' },
+    403: errors.stepUp,
+    404: errors[404],
+    409: errors[409],
+  },
+});
+
+registry.registerPath({
+  ...admin,
+  method: 'delete',
+  path: '/api/admin/catalog/categories/{id}/attributes/{key}',
+  summary: 'Unbind an attribute from a category.',
+  request: { params: z.object({ id: z.string(), key: z.string() }) },
+  responses: {
+    200: json(envelope(adminCategorySchema.omit({ children: true })), 'Unbound.'),
+    404: errors[404],
+  },
+});
+
+registry.registerPath({
+  ...admin,
+  method: 'get',
+  path: '/api/admin/catalog/products',
+  summary: 'Every product, any status, from MongoDB.',
+  request: {
+    query: z.object({
+      status: z.enum(['draft', 'active', 'archived']).optional(),
+      categoryId: z
+        .string()
+        .optional()
+        .openapi({ description: 'A branch: everything beneath it.' }),
+      q: z.string().optional().openapi({ description: 'A title fragment or an exact SKU.' }),
+      needsAttention: z.enum(['true', 'false']).optional(),
+      page: z.number().int().min(1).optional(),
+      perPage: z.number().int().min(1).max(60).optional(),
+    }),
+  },
+  responses: { 200: json(paged(adminProductSummarySchema), 'Most recently updated first.') },
+});
+
+registry.registerPath({
+  ...admin,
+  method: 'get',
+  path: '/api/admin/catalog/products/{id}',
+  summary: 'One product, whole, with its validation issues.',
+  request: { params: idParams },
+  responses: { 200: json(envelope(adminProductSchema), 'The product.'), 404: errors[404] },
+});
+
+registry.registerPath({
+  ...admin,
+  method: 'delete',
+  path: '/api/admin/catalog/products/{id}',
+  summary: 'Archive a product. Requires step-up.',
+  request: { params: idParams },
+  responses: {
+    204: { description: 'Archived and removed from the index.' },
+    403: errors.stepUp,
+    404: errors[404],
   },
 });
 
@@ -1374,5 +1688,622 @@ registry.registerPath({
   responses: {
     200: json(envelope(z.object({ order: orderSchema })), 'The order.'),
     404: errors[404],
+  },
+});
+
+/* ----------------------------------------------------------- admin: orders -- */
+
+const adminOrders = { security: [{ sessionCookie: [] }], tags: ['Admin orders'] };
+
+const adminOrderSummarySchema = registry.register(
+  'AdminOrderSummary',
+  z
+    .object({
+      id: z.string(),
+      orderNumber: z.string(),
+      status: z.enum(ORDER_STATUSES),
+      email: z.string(),
+      guest: z.boolean(),
+      itemCount: z.number().int(),
+      grandTotal: moneySchema,
+      provider: z.enum(['stripe', 'paypal']),
+      placedAt: z.string(),
+      paidAt: z.string().nullable(),
+      stuckPayment: z.boolean().openapi({
+        description:
+          'Unpaid, with a payment started more than 15 minutes ago — most likely a lost ' +
+          'webhook, and what the reconcile action is for.',
+      }),
+    })
+    .openapi('AdminOrderSummary'),
+);
+
+const adminOrderSchema = registry.register(
+  'AdminOrder',
+  orderSchema
+    .omit({ claimToken: true })
+    .extend({
+      userId: z.string().nullable(),
+      payment: z.object({
+        provider: z.enum(['stripe', 'paypal']),
+        paid: z.boolean(),
+        intentId: z.string().nullable(),
+        captureId: z.string().nullable(),
+        providerStatus: z.string().nullable(),
+        amountCaptured: moneySchema.nullable(),
+        capturedAt: z.string().nullable(),
+        lastError: z.string().nullable().openapi({
+          description: 'Which verification refused a payment, when one did.',
+        }),
+      }),
+      stockReserved: z.boolean(),
+      reservationExpiresAt: z.string().nullable(),
+      canceledAt: z.string().nullable(),
+      stuckPayment: z.boolean(),
+      history: z.array(
+        z.object({
+          status: z.enum(ORDER_STATUSES),
+          at: z.string(),
+          by: z.string(),
+          note: z.string().optional(),
+        }),
+      ),
+      actions: z.array(z.enum(ADMIN_ORDER_ACTIONS)).openapi({
+        description:
+          'What may be done to this order now, derived from the status machine on the ' +
+          'server. Render buttons from this; do not re-derive it.',
+      }),
+    })
+    .openapi('AdminOrder'),
+);
+
+const orderEnvelope = json(
+  envelope(z.object({ order: adminOrderSchema })),
+  'The order as it now stands.',
+);
+const transitionRefused = json(
+  errorSchema,
+  'The order is not in a state this action applies to. `details.status` names the state it is in.',
+);
+
+registry.registerPath({
+  ...adminOrders,
+  method: 'get',
+  path: '/api/admin/orders',
+  summary: 'Every order, newest first.',
+  request: {
+    query: z.object({
+      status: z.enum(ORDER_STATUSES).optional(),
+      q: z
+        .string()
+        .optional()
+        .openapi({ description: 'An order number, or the start of an email.' }),
+      page: z.number().int().min(1).optional(),
+      perPage: z.number().int().min(1).max(60).optional(),
+    }),
+  },
+  responses: { 200: json(paged(adminOrderSummarySchema), 'A page of orders.') },
+});
+
+registry.registerPath({
+  ...adminOrders,
+  method: 'get',
+  path: '/api/admin/orders/{id}',
+  summary: 'One order, with its payment record, history and available actions.',
+  request: { params: idParams },
+  responses: { 200: orderEnvelope, 404: errors[404] },
+});
+
+registry.registerPath({
+  ...adminOrders,
+  method: 'post',
+  path: '/api/admin/orders/{id}/status',
+  summary: 'Move an order forward: processing, shipped, delivered.',
+  description:
+    'Shipping consumes the reserved stock in the same transaction as the status change, and ' +
+    'is claimed in the same write, so two presses ship once. There is no paid → shipped edge.',
+  request: {
+    params: idParams,
+    body: { content: { 'application/json': { schema: advanceOrderSchema } } },
+  },
+  responses: { 200: orderEnvelope, 404: errors[404], 409: transitionRefused },
+});
+
+registry.registerPath({
+  ...adminOrders,
+  method: 'post',
+  path: '/api/admin/orders/{id}/cancel',
+  summary: 'Cancel an unpaid order and return its stock. Requires step-up.',
+  description: 'Unpaid orders only. A paid order that should not ship is refunded instead.',
+  request: {
+    params: idParams,
+    body: { content: { 'application/json': { schema: cancelOrderSchema } } },
+  },
+  responses: { 200: orderEnvelope, 403: errors.stepUp, 404: errors[404], 409: transitionRefused },
+});
+
+registry.registerPath({
+  ...adminOrders,
+  method: 'post',
+  path: '/api/admin/orders/{id}/refund',
+  summary: 'Record a refund issued in the provider’s dashboard. Requires step-up.',
+  description:
+    '**This does not move money.** It records that the money was returned, with a required ' +
+    'note, and puts any still-held stock back on the shelf.',
+  request: {
+    params: idParams,
+    body: { content: { 'application/json': { schema: refundOrderSchema } } },
+  },
+  responses: {
+    200: orderEnvelope,
+    403: errors.stepUp,
+    404: errors[404],
+    409: transitionRefused,
+    422: errors[422],
+  },
+});
+
+registry.registerPath({
+  ...adminOrders,
+  method: 'post',
+  path: '/api/admin/orders/{id}/reconcile',
+  summary: 'Ask the provider what happened, and settle the order if it was paid.',
+  description:
+    'The same reconcileOrderWithProvider the return page uses, funnelling into the same ' +
+    'markOrderPaid. Safe to press any number of times.',
+  request: { params: idParams },
+  responses: {
+    200: json(
+      envelope(
+        z.object({
+          outcome: z.enum([
+            'paid',
+            'already_settled',
+            'not_found',
+            'amount_mismatch',
+            'nothing_to_do',
+          ]),
+          reason: z.string().nullable(),
+          order: adminOrderSchema,
+        }),
+      ),
+      'What the provider said, and the order afterwards.',
+    ),
+    404: errors[404],
+    503: json(errorSchema, 'The provider did not answer.'),
+  },
+});
+
+/* -------------------------------------------------------- admin: customers -- */
+
+const adminCustomers = { security: [{ sessionCookie: [] }], tags: ['Admin customers'] };
+
+const customerSummarySchema = registry.register(
+  'CustomerSummary',
+  z
+    .object({
+      id: z.string(),
+      email: z.string(),
+      name: z.string().optional(),
+      roles: z.array(z.string()),
+      createdAt: z.string(),
+      lastSeenAt: z.string().nullable(),
+      orderCount: z.number().int(),
+      spent: z.array(moneySchema).openapi({
+        description: 'Money kept, one entry per currency. Unpaid and refunded orders excluded.',
+      }),
+      lastOrderAt: z.string().nullable(),
+    })
+    .openapi('CustomerSummary'),
+);
+
+const customerDetailSchema = registry.register(
+  'CustomerDetail',
+  customerSummarySchema
+    .extend({
+      self: z.boolean(),
+      bootstrapAdmin: z.boolean().openapi({
+        description: 'On ADMIN_EMAILS: the role would be re-granted at next sign-in.',
+      }),
+      activeSessions: z.number().int(),
+      recentOrders: z.array(adminOrderSummarySchema),
+    })
+    .openapi('CustomerDetail'),
+);
+
+registry.registerPath({
+  ...adminCustomers,
+  method: 'get',
+  path: '/api/admin/customers',
+  summary: 'Everyone who has signed in, newest first.',
+  request: {
+    query: z.object({
+      q: z.string().optional().openapi({ description: 'The start of an email address.' }),
+      page: z.number().int().min(1).optional(),
+      perPage: z.number().int().min(1).max(60).optional(),
+    }),
+  },
+  responses: { 200: json(paged(customerSummarySchema), 'A page of customers.') },
+});
+
+registry.registerPath({
+  ...adminCustomers,
+  method: 'get',
+  path: '/api/admin/customers/{id}',
+  summary: 'One customer.',
+  request: { params: idParams },
+  responses: { 200: json(envelope(customerDetailSchema), 'The customer.'), 404: errors[404] },
+});
+
+registry.registerPath({
+  ...adminCustomers,
+  method: 'post',
+  path: '/api/admin/customers/{id}/revoke-sessions',
+  summary: 'Sign a customer out of every device, now.',
+  request: { params: idParams },
+  responses: {
+    200: json(envelope(z.object({ revoked: z.number().int() })), 'Sessions ended.'),
+    400: json(errorSchema, 'That is the caller’s own account.'),
+    404: errors[404],
+  },
+});
+
+registry.registerPath({
+  ...adminCustomers,
+  method: 'put',
+  path: '/api/admin/customers/{id}/roles',
+  summary: 'Grant or remove the admin role. Requires step-up.',
+  description:
+    'Either direction ends all of the person’s sessions: for a grant, that is the session ' +
+    'rotation a privilege change requires, performed on a browser the admin does not hold.',
+  request: {
+    params: idParams,
+    body: { content: { 'application/json': { schema: z.object({ admin: z.boolean() }) } } },
+  },
+  responses: {
+    200: json(
+      envelope(z.object({ changed: z.boolean(), customer: customerDetailSchema })),
+      'The customer now.',
+    ),
+    400: json(errorSchema, 'An admin cannot change their own role.'),
+    403: errors.stepUp,
+    409: json(errorSchema, 'The address is on ADMIN_EMAILS and would be re-granted.'),
+  },
+});
+
+/* ------------------------------------------------------------- storefront -- */
+
+/**
+ * The section union is rebuilt here from `.extend({})` copies rather than registered as
+ * imported. Schemas created before `extendZodWithOpenApi` runs carry no `.openapi`, and
+ * registering one calls it — so the imported union fails generation although it
+ * validates perfectly well at runtime.
+ */
+const sectionDocSchema = registry.register(
+  'StorefrontSection',
+  z
+    .discriminatedUnion('kind', [
+      heroSectionSchema.extend({}),
+      shelvesSectionSchema.extend({}),
+      productRowSectionSchema.extend({}),
+      noteSectionSchema.extend({}),
+    ])
+    .openapi('StorefrontSection'),
+);
+
+const listingCardArray = z.array(listingCardSchema);
+
+const resolvedSectionSchema = registry.register(
+  'ResolvedSection',
+  z
+    .discriminatedUnion('kind', [
+      heroSectionSchema.extend({}),
+      shelvesSectionSchema.extend({
+        shelves: z.array(
+          z.object({
+            id: z.string(),
+            name: z.string(),
+            path: z.string(),
+            imagePublicId: z.string().optional(),
+          }),
+        ),
+      }),
+      productRowSectionSchema.extend({
+        products: listingCardArray,
+        category: z.object({ name: z.string(), path: z.string() }).nullable(),
+      }),
+      noteSectionSchema.extend({}),
+    ])
+    .openapi('ResolvedSection'),
+);
+
+const storefrontLayoutSchema = registry.register(
+  'StorefrontLayout',
+  z
+    .object({
+      id: z.string(),
+      handle: z.enum(['home']),
+      version: z.number().int(),
+      status: z.enum(['draft', 'published', 'retired']),
+      sections: z.array(sectionDocSchema),
+      note: z.string(),
+      revision: z.number().int().openapi({
+        description: 'Send it back with a draft save or publish; a stale one is a 409.',
+      }),
+      createdAt: z.string(),
+      updatedAt: z.string(),
+      publishedAt: z.string().nullable(),
+      retiredAt: z.string().nullable(),
+    })
+    .openapi('StorefrontLayout'),
+);
+
+const storefrontVersionSchema = registry.register(
+  'StorefrontVersion',
+  storefrontLayoutSchema
+    .omit({ sections: true, revision: true, handle: true })
+    .extend({ sectionCount: z.number().int() })
+    .openapi('StorefrontVersion'),
+);
+
+registry.registerPath({
+  tags: ['Storefront'],
+  method: 'get',
+  path: '/api/storefront/{handle}',
+  summary: 'The composed page, as published.',
+  description:
+    'Only ever the published version — or, before anything is published, the built-in ' +
+    'default (version null). Every product and category reference is resolved as it stands ' +
+    'now; a reference that has gone stale is left out rather than failing the page.',
+  request: { params: z.object({ handle: z.enum(['home']) }) },
+  responses: {
+    200: json(
+      envelope(
+        z.object({
+          handle: z.enum(['home']),
+          version: z.number().int().nullable(),
+          publishedAt: z.string().nullable(),
+          sections: z.array(resolvedSectionSchema),
+        }),
+      ),
+      'The page.',
+    ),
+    404: errors[404],
+  },
+});
+
+const adminStorefront = { security: [{ sessionCookie: [] }], tags: ['Admin storefront'] };
+const handleParams = z.object({ handle: z.enum(['home']) });
+const versionParams = handleParams.extend({ version: z.number().int().min(1) });
+const layoutEnvelope = json(envelope(storefrontLayoutSchema), 'The version.');
+
+registry.registerPath({
+  ...adminStorefront,
+  method: 'get',
+  path: '/api/admin/storefront/{handle}',
+  summary: 'The composer’s state: what is live, the draft, and the history.',
+  request: { params: handleParams },
+  responses: {
+    200: json(
+      envelope(
+        z.object({
+          handle: z.enum(['home']),
+          published: storefrontLayoutSchema.nullable(),
+          draft: storefrontLayoutSchema.nullable(),
+          versions: z.array(storefrontVersionSchema),
+        }),
+      ),
+      'The page’s versions.',
+    ),
+  },
+});
+
+registry.registerPath({
+  ...adminStorefront,
+  method: 'post',
+  path: '/api/admin/storefront/{handle}/draft',
+  summary: 'Open the draft, creating it from what is live if there is none.',
+  request: { params: handleParams },
+  responses: { 200: layoutEnvelope },
+});
+
+registry.registerPath({
+  ...adminStorefront,
+  method: 'put',
+  path: '/api/admin/storefront/{handle}/draft',
+  summary: 'Save the draft against the revision it was loaded at.',
+  request: {
+    params: handleParams,
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            sections: z.array(sectionDocSchema).max(12),
+            note: z.string().max(200).optional(),
+            revision: z.number().int().min(0),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: layoutEnvelope,
+    404: errors[404],
+    409: json(errorSchema, 'Saved by someone else since; `details.revision` is the current one.'),
+    422: errors[422],
+  },
+});
+
+registry.registerPath({
+  ...adminStorefront,
+  method: 'delete',
+  path: '/api/admin/storefront/{handle}/draft',
+  summary: 'Throw the draft away.',
+  request: { params: handleParams },
+  responses: { 204: { description: 'Discarded.' }, 404: errors[404] },
+});
+
+registry.registerPath({
+  ...adminStorefront,
+  method: 'post',
+  path: '/api/admin/storefront/{handle}/draft/publish',
+  summary: 'Publish the draft. Requires step-up.',
+  description:
+    'Retires the live version and promotes the draft in one transaction. A second published ' +
+    'version per handle is refused by a unique index, so concurrent publishes produce one.',
+  request: {
+    params: handleParams,
+    body: { content: { 'application/json': { schema: publishDraftSchema } } },
+  },
+  responses: {
+    200: layoutEnvelope,
+    403: errors.stepUp,
+    404: errors[404],
+    409: json(errorSchema, 'The draft changed or was published since it was loaded.'),
+    422: errors[422],
+  },
+});
+
+registry.registerPath({
+  ...adminStorefront,
+  method: 'get',
+  path: '/api/admin/storefront/{handle}/versions/{version}',
+  summary: 'One version, whole.',
+  request: { params: versionParams },
+  responses: { 200: layoutEnvelope, 404: errors[404] },
+});
+
+registry.registerPath({
+  ...adminStorefront,
+  method: 'get',
+  path: '/api/admin/storefront/{handle}/versions/{version}/preview',
+  summary: 'A version resolved exactly as the storefront would render it, with warnings.',
+  request: { params: versionParams },
+  responses: {
+    200: json(
+      envelope(
+        z.object({
+          version: storefrontLayoutSchema,
+          sections: z.array(resolvedSectionSchema),
+          warnings: z.array(z.string()),
+        }),
+      ),
+      'The resolved page.',
+    ),
+    404: errors[404],
+  },
+});
+
+registry.registerPath({
+  ...adminStorefront,
+  method: 'post',
+  path: '/api/admin/storefront/{handle}/versions/{version}/publish',
+  summary: 'Put an earlier version back on the page. This is rollback. Requires step-up.',
+  request: { params: versionParams },
+  responses: { 200: layoutEnvelope, 403: errors.stepUp, 404: errors[404], 409: errors[409] },
+});
+
+/* ------------------------------------------------------ dashboard and audit -- */
+
+const adminConsole = { security: [{ sessionCookie: [] }], tags: ['Admin console'] };
+
+registry.registerPath({
+  ...adminConsole,
+  method: 'get',
+  path: '/api/admin/dashboard',
+  summary: 'What needs a person today.',
+  responses: {
+    200: json(
+      envelope(
+        z
+          .object({
+            orders: z.object({
+              toFulfil: z.number().int(),
+              stuckPayments: z.object({
+                count: z.number().int(),
+                oldest: z.array(
+                  z.object({
+                    id: z.string(),
+                    orderNumber: z.string(),
+                    email: z.string(),
+                    provider: z.enum(['stripe', 'paypal']),
+                    grandTotal: moneySchema,
+                    placedAt: z.string(),
+                  }),
+                ),
+              }),
+            }),
+            catalogue: z.object({
+              needsAttention: z.object({
+                count: z.number().int(),
+                recent: z.array(
+                  z.object({ id: z.string(), title: z.string(), issues: z.array(z.string()) }),
+                ),
+              }),
+              lowStock: z.array(
+                z.object({
+                  productId: z.string(),
+                  title: z.string(),
+                  sku: z.string(),
+                  available: z.number().int(),
+                  threshold: z.number().int(),
+                }),
+              ),
+            }),
+            revenue: z.object({
+              windowDays: z.number().int(),
+              byCurrency: z.array(
+                z.object({
+                  currency: z.string(),
+                  amount: z.number().int(),
+                  orders: z.number().int(),
+                }),
+              ),
+            }),
+            storefront: z.object({
+              publishedVersion: z.number().int().nullable(),
+              publishedAt: z.string().nullable(),
+              draftVersion: z.number().int().nullable(),
+              draftUpdatedAt: z.string().nullable(),
+            }),
+          })
+          .openapi('Dashboard'),
+      ),
+      'The queues.',
+    ),
+  },
+});
+
+registry.registerPath({
+  ...adminConsole,
+  method: 'get',
+  path: '/api/admin/audit',
+  summary: 'Every admin mutation that succeeded, newest first.',
+  request: {
+    query: z.object({
+      targetId: z.string().optional(),
+      page: z.number().int().min(1).optional(),
+      perPage: z.number().int().min(1).max(60).optional(),
+    }),
+  },
+  responses: {
+    200: json(
+      paged(
+        z
+          .object({
+            id: z.string(),
+            actor: z.object({ userId: z.string(), email: z.string() }),
+            method: z.string(),
+            route: z.string(),
+            path: z.string(),
+            targetId: z.string().nullable(),
+            status: z.number().int(),
+            requestId: z.string().nullable(),
+            at: z.string(),
+          })
+          .openapi('AuditEntry'),
+      ),
+      'A page of the log.',
+    ),
   },
 });

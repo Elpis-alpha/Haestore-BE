@@ -263,6 +263,8 @@ orderSchema.index(
 orderSchema.index({ user: 1, createdAt: -1 });
 /** What `claimGuestOrders` scans at sign-in. */
 orderSchema.index({ email: 1, user: 1 });
+/** The admin order list, filtered by status and newest first; also the dashboard's counts. */
+orderSchema.index({ status: 1, createdAt: -1 });
 /** The sweeper's query: unpaid orders whose hold has run out. */
 orderSchema.index({ status: 1, reservationExpiresAt: 1 });
 

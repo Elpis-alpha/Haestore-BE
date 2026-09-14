@@ -94,3 +94,66 @@ export function isPaidState(status: OrderStatus): boolean {
 export function holdsReservation(status: OrderStatus): boolean {
   return status === 'pending_payment' || status === 'paid' || status === 'processing';
 }
+
+/**
+ * What the admin console may do to an order.
+ *
+ * Every action except `reconcile` is a transition, and which ones are offered is
+ * **derived from the machine above** rather than written out per status — a second
+ * table of "what can happen next" is a second table that can disagree with the first.
+ * The API returns these on each order, so the console renders buttons from them and
+ * never re-implements the machine in the browser.
+ */
+export const ADMIN_ORDER_ACTIONS = [
+  'reconcile',
+  'start_processing',
+  'mark_shipped',
+  'mark_delivered',
+  'cancel',
+  'record_refund',
+] as const;
+
+export type AdminOrderAction = (typeof ADMIN_ORDER_ACTIONS)[number];
+
+export const ACTION_TARGETS = {
+  start_processing: 'processing',
+  mark_shipped: 'shipped',
+  mark_delivered: 'delivered',
+  cancel: 'canceled',
+  record_refund: 'refunded',
+} as const satisfies Record<Exclude<AdminOrderAction, 'reconcile'>, OrderStatus>;
+
+/**
+ * The one place the admin console is narrower than the machine.
+ *
+ * The machine allows `paid → canceled`, because canceling a paid order is a real
+ * operation — but it is one that returns money, and this shop does not issue refunds
+ * through the providers (see CHECKOUT.md). Offering "Cancel" on a paid order would
+ * release the stock and keep the money, silently. So an admin cancels only before money
+ * has moved, and a paid order that should not ship is *refunded*, which says what it is.
+ */
+export const ADMIN_CANCELABLE_FROM: readonly OrderStatus[] = ['pending_payment'];
+
+export function adminActionsFor(order: {
+  status: OrderStatus;
+  /** A provider intent exists, so there is something to ask the provider about. */
+  paymentStarted: boolean;
+}): AdminOrderAction[] {
+  const actions: AdminOrderAction[] = [];
+
+  // Not a transition: it asks the provider, and `markOrderPaid` decides. Offered only
+  // where there is an intent to ask about — an order abandoned before the payment step
+  // has nothing the provider could say.
+  if (order.status === 'pending_payment' && order.paymentStarted) actions.push('reconcile');
+
+  for (const [action, target] of Object.entries(ACTION_TARGETS) as [
+    Exclude<AdminOrderAction, 'reconcile'>,
+    OrderStatus,
+  ][]) {
+    if (!canTransition(order.status, target)) continue;
+    if (action === 'cancel' && !ADMIN_CANCELABLE_FROM.includes(order.status)) continue;
+    actions.push(action);
+  }
+
+  return actions;
+}
