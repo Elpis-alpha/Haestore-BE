@@ -172,3 +172,107 @@ describe('toSearchDocument', () => {
     expect(toSearchDocument(product(), none).status).toBe('active');
   });
 });
+
+describe('toSearchDocument — what a product is sold in', () => {
+  const variant = (axisValues: { key: string; value: string }[], status = 'active') => ({
+    _id: new Types.ObjectId(),
+    sku: 'X',
+    axisValues,
+    price: { amount: 1000, currency: 'USD' },
+    stock: { onHand: 1, reserved: 0, available: 1, lowStockThreshold: 3, backorderable: false },
+    imagePublicIds: [],
+    status,
+    position: 0,
+  });
+
+  it('makes every active variant’s axis value a filterable fact', () => {
+    const doc = toSearchDocument(
+      product({
+        variantAxes: ['glaze'],
+        variants: [
+          variant([{ key: 'glaze', value: 'celadon' }]),
+          variant([{ key: 'glaze', value: 'tenmoku' }]),
+          variant([{ key: 'glaze', value: 'celadon' }]),
+        ],
+      }),
+      none,
+      new Map([['glaze', 'color']]),
+    );
+    expect(doc.attr.glaze).toEqual(['celadon', 'tenmoku']);
+  });
+
+  it('indexes a numeric axis as numbers, so a range filter can compare them', () => {
+    const doc = toSearchDocument(
+      product({
+        variantAxes: ['grind', 'weight_g'],
+        variants: [
+          variant([
+            { key: 'grind', value: 'whole' },
+            { key: 'weight_g', value: '250' },
+          ]),
+          variant([
+            { key: 'grind', value: 'whole' },
+            { key: 'weight_g', value: '1000' },
+          ]),
+        ],
+      }),
+      none,
+      new Map([
+        ['grind', 'select'],
+        ['weight_g', 'number'],
+      ]),
+    );
+    expect(doc.attr.weight_g).toEqual([250, 1000]);
+    expect(doc.attr.grind).toEqual(['whole']);
+  });
+
+  it('leaves out what is not for sale, and never overrides what the product states', () => {
+    const doc = toSearchDocument(
+      product({
+        variantAxes: ['scent'],
+        attributes: [
+          attr({
+            key: 'scent',
+            type: 'select',
+            valueString: 'unscented',
+            displayValue: 'Unscented',
+          }),
+        ],
+        variants: [
+          variant([{ key: 'scent', value: 'lavender' }]),
+          variant([{ key: 'scent', value: 'vetiver' }], 'inactive'),
+        ],
+      }),
+      none,
+      new Map([['scent', 'select']]),
+    );
+    expect(doc.attr.scent).toBe('unscented');
+
+    const unstated = toSearchDocument(
+      product({
+        variantAxes: ['scent'],
+        variants: [
+          variant([{ key: 'scent', value: 'lavender' }]),
+          variant([{ key: 'scent', value: 'vetiver' }], 'inactive'),
+        ],
+      }),
+      none,
+      new Map([['scent', 'select']]),
+    );
+    expect(unstated.attr.scent).toEqual(['lavender']);
+  });
+
+  it('turns a yes-or-no axis into a boolean only when every variant agrees', () => {
+    const one = (values: string[]) =>
+      toSearchDocument(
+        product({
+          variantAxes: ['gift_wrapped'],
+          variants: values.map((value) => variant([{ key: 'gift_wrapped', value }])),
+        }),
+        none,
+        new Map([['gift_wrapped', 'boolean']]),
+      ).attr.gift_wrapped;
+    expect(one(['true'])).toBe(true);
+    expect(one(['true', 'false'])).toBeUndefined();
+  });
+});

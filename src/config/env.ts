@@ -122,6 +122,12 @@ const envSchema = z.object({
   // ---- Seeding -----------------------------------------------------------
   UNSPLASH_ACCESS_KEY: z.string().optional(),
   UNSPLASH_APP_NAME: z.string().default('haestore'),
+  /**
+   * Where the seed keeps Unsplash search responses and the record of which photographs'
+   * downloads it has reported. Defaults to `../assets/.unsplash-cache` beside the root repo,
+   * or `.unsplash-cache` here when this repo is checked out alone. See docs/SEEDING.md.
+   */
+  UNSPLASH_CACHE_DIR: z.string().optional(),
 
   // ---- Payments (test mode) ----------------------------------------------
   STRIPE_SECRET_KEY: z.string().optional(),

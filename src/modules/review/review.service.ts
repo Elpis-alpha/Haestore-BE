@@ -6,7 +6,7 @@ import { User } from '../auth/user.model.js';
 import { Product } from '../catalog/product.model.js';
 import { Order } from '../order/order.model.js';
 import { Review, type ReviewAttrs } from './review.model.js';
-import { reviewerName, summariseRatings, type RatingSummary } from './review-rules.js';
+import { ratingScore, reviewerName, summariseRatings, type RatingSummary } from './review-rules.js';
 import type {
   AdminReviewQuery,
   PublicReviewQuery,
@@ -101,7 +101,13 @@ async function withRatingRefresh<T>(
       const summary = summariseRatings(await ratingCounts(productId, session));
       await Product.updateOne(
         { _id: productId },
-        { $set: { ratingAverage: summary.average, ratingCount: summary.count } },
+        {
+          $set: {
+            ratingAverage: summary.average,
+            ratingCount: summary.count,
+            ratingScore: ratingScore(summary.average, summary.count),
+          },
+        },
         { session },
       );
       await appendOutbox(session, { kind: 'product', entityId: String(productId), op: 'upsert' });

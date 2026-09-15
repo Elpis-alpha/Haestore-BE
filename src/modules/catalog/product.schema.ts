@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { patchOf } from '../../lib/zod-patch.js';
 import { objectIdSchema } from './category.schema.js';
+import { blurDataUrlSchema, imageCreditSchema, imageSourceSchema } from './image-source.js';
 
 const moneySchema = z.object({
   /** Minor units, always an integer. A float here is the bug this shape exists to stop. */
@@ -29,18 +30,20 @@ export const variantInputSchema = z.object({
     })
     .default({ onHand: 0, lowStockThreshold: 3, backorderable: false }),
   weightGrams: z.number().min(0).optional(),
-  imagePublicIds: z.array(z.string().trim()).default([]),
+  imagePublicIds: z.array(imageSourceSchema).max(24).default([]),
   status: z.enum(['active', 'inactive']).default('active'),
   position: z.number().int().min(0).default(0),
 });
 
 export const productImageSchema = z.object({
-  publicId: z.string().trim().min(1),
+  /** A Cloudinary public id or a hotlinked Unsplash address, and nothing else. ADR-015. */
+  publicId: imageSourceSchema,
   alt: z.string().trim().max(200).default(''),
   width: z.number().int().positive().optional(),
   height: z.number().int().positive().optional(),
-  blurDataUrl: z.string().optional(),
+  blurDataUrl: blurDataUrlSchema.optional(),
   position: z.number().int().min(0).default(0),
+  credit: imageCreditSchema.optional(),
 });
 
 export const createProductSchema = z.object({

@@ -79,3 +79,32 @@ export function reviewerName(name: string | null | undefined): string {
   const initial = Array.from(parts[parts.length - 1]!)[0]!.toLocaleUpperCase();
   return `${given} ${initial}.`;
 }
+
+/**
+ * Where a rating sort starts from before anyone has said anything: three stars, held with
+ * the weight of five reviews.
+ */
+export const RATING_PRIOR = { mean: 3, weight: 5 } as const;
+
+/**
+ * The figure the listing sorts "best rated" by — a Bayesian average, not the average.
+ *
+ * Sorting by the plain average puts one five-star review above two hundred at 4.9, which
+ * is a sort order that rewards having almost no customers. Pulling every average towards
+ * the prior by `weight` imaginary reviews fixes that without a threshold: a single five
+ * scores 3.33, two hundred at 4.9 score 4.85, and the two orders meet as reviews accumulate
+ * — at a few dozen, the score and the average are within a tenth of each other.
+ *
+ * **The card still shows the average.** This number is an ordering, and printing it would
+ * tell a shopper a product is rated 3.33 when every review of it says five.
+ *
+ * A product nobody has reviewed scores zero rather than the prior, so "best rated" lists
+ * what has ratings first. The prior is a fixed three rather than the shop's own mean, which
+ * would make every product's score move whenever any review anywhere was written, and
+ * reindex the whole catalogue to follow it.
+ */
+export function ratingScore(average: number, count: number): number {
+  if (count <= 0) return 0;
+  const { mean, weight } = RATING_PRIOR;
+  return Math.round(((mean * weight + average * count) / (weight + count)) * 1000) / 1000;
+}

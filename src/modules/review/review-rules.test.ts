@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { reviewerName, summariseRatings } from './review-rules.js';
+import { ratingScore, reviewerName, summariseRatings } from './review-rules.js';
 
 describe('summariseRatings', () => {
   it('is zero, not NaN, with nothing to summarise', () => {
@@ -83,5 +83,23 @@ describe('reviewerName', () => {
 
   it('does not split a character that is more than one code unit', () => {
     expect(reviewerName('Zoë 𝒜ndersen')).toBe('Zoë 𝒜.');
+  });
+});
+
+describe('ratingScore', () => {
+  it('puts two hundred reviews at 4.9 above one five-star review', () => {
+    expect(ratingScore(4.9, 200)).toBeGreaterThan(ratingScore(5, 1));
+    expect(ratingScore(5, 1)).toBe(3.333);
+    expect(ratingScore(4.9, 200)).toBe(4.854);
+  });
+
+  it('converges on the average as reviews accumulate', () => {
+    expect(Math.abs(ratingScore(4.6, 40) - 4.6)).toBeLessThan(0.2);
+    expect(Math.abs(ratingScore(4.6, 400) - 4.6)).toBeLessThan(0.02);
+  });
+
+  it('ranks a product nobody has reviewed below one that somebody disliked', () => {
+    expect(ratingScore(0, 0)).toBe(0);
+    expect(ratingScore(1, 1)).toBeGreaterThan(ratingScore(0, 0));
   });
 });

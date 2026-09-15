@@ -2,7 +2,12 @@ import { logger } from '../lib/logger.js';
 import { Product } from '../modules/catalog/product.model.js';
 import { meili, PRODUCTS_INDEX, PRODUCTS_REBUILD_INDEX } from './meili.js';
 import { toSearchDocument, type ProductSearchDocument } from './product-document.js';
-import { buildSearchSettings, loadDefinitionsForSettings, loadSearchableKeys } from './settings.js';
+import {
+  buildSearchSettings,
+  loadAttributeTypes,
+  loadDefinitionsForSettings,
+  loadSearchableKeys,
+} from './settings.js';
 
 /**
  * Rebuilding the index from scratch.
@@ -76,7 +81,7 @@ export async function reindexAll(options: { force?: boolean } = {}): Promise<Rei
   const settingsTask = await rebuild.updateSettings(settings);
   await meili.waitForTask(settingsTask.taskUid, { timeOutMs: 300_000 });
 
-  const searchableKeys = await loadSearchableKeys();
+  const [searchableKeys, types] = await Promise.all([loadSearchableKeys(), loadAttributeTypes()]);
 
   let batch: ProductSearchDocument[] = [];
   let indexed = 0;
@@ -93,7 +98,7 @@ export async function reindexAll(options: { force?: boolean } = {}): Promise<Rei
   // A cursor, so the whole catalogue never has to fit in memory at once.
   const cursor = Product.find({ status: 'active' }).lean().cursor();
   for await (const product of cursor) {
-    batch.push(toSearchDocument(product, searchableKeys));
+    batch.push(toSearchDocument(product, searchableKeys, types));
     if (batch.length >= BATCH_SIZE) await flush();
   }
   await flush();

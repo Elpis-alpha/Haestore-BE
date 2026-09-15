@@ -39,6 +39,7 @@ export const SORTABLE = [
   'publishedAt',
   'ratingAverage',
   'ratingCount',
+  'ratingScore',
 ] as const;
 
 export const BASE_SEARCHABLE = ['title', 'subtitle', 'attrText', 'description'] as const;
@@ -134,6 +135,18 @@ export async function loadDefinitionsForSettings(): Promise<DefinitionForSetting
     isFilterable: d.isFilterable,
     isSearchable: d.isSearchable,
   }));
+}
+
+/**
+ * Every live definition's type, by key. The search document needs it for a variant axis,
+ * whose values are stored as strings on the variants — `'250'` — and must be indexed as the
+ * numbers a weight range filter compares.
+ */
+export async function loadAttributeTypes(): Promise<Map<string, AttributeType>> {
+  const definitions = await AttributeDefinition.find({ archivedAt: { $exists: false } })
+    .select('key type')
+    .lean();
+  return new Map(definitions.map((d) => [d.key, d.type]));
 }
 
 /** The attribute keys whose display values are worth putting in the search text. */

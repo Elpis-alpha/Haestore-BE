@@ -46,7 +46,8 @@ const SORTS = {
   // sorting by anything else produces an order the shopper cannot see the logic of.
   price_asc: ['priceMin:asc'],
   price_desc: ['priceMin:desc'],
-  rating: ['ratingAverage:desc', 'ratingCount:desc'],
+  // The Bayesian score, not the average: see `ratingScore` in review/review-rules.ts.
+  rating: ['ratingScore:desc', 'ratingCount:desc'],
   /** No sort clause at all: Meilisearch's own ranking. Only meaningful with a query. */
   relevance: [] as string[],
 } as const;
@@ -295,7 +296,7 @@ async function degradedListing(request: ListingRequest): Promise<ListingResult> 
     oldest: { publishedAt: 1, _id: 1 },
     price_asc: { 'priceRange.min': 1, _id: 1 },
     price_desc: { 'priceRange.min': -1, _id: -1 },
-    rating: { ratingAverage: -1, _id: -1 },
+    rating: { ratingScore: -1, ratingCount: -1, _id: -1 },
     relevance: { publishedAt: -1, _id: -1 },
   };
 

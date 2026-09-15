@@ -155,9 +155,28 @@ const productImageSchema = new Schema(
     alt: { type: String, trim: true, maxlength: 200, default: '' },
     width: { type: Number },
     height: { type: Number },
-    /** Cloudinary-generated LQIP, so the placeholder costs no Worker CPU. */
+    /**
+     * The blur placeholder, inlined: a sixteen-pixel Cloudinary JPEG for the shop's own
+     * photographs, a decoded BlurHash for Unsplash's. Either way it costs no Worker CPU.
+     */
     blurDataUrl: { type: String },
     position: { type: Number, required: true, default: 0 },
+    /**
+     * Who took it, for a photograph the shop did not. Required by the licence of anything
+     * from Unsplash, and printed beside the photograph on the product page. See ADR-015.
+     */
+    credit: {
+      type: new Schema(
+        {
+          author: { type: String, required: true, trim: true, maxlength: 120 },
+          authorUrl: { type: String, required: true, trim: true, maxlength: 500 },
+          source: { type: String, required: true, trim: true, maxlength: 60 },
+          sourceUrl: { type: String, required: true, trim: true, maxlength: 500 },
+        },
+        { _id: false },
+      ),
+      default: undefined,
+    },
   },
   { _id: false },
 );
@@ -239,6 +258,11 @@ const productSchema = new Schema(
 
     ratingAverage: { type: Number, default: 0, min: 0, max: 5 },
     ratingCount: { type: Number, default: 0, min: 0 },
+    /**
+     * The Bayesian average "best rated" sorts by, written beside the other two in the same
+     * transaction. Never displayed; see `ratingScore` in review/review-rules.ts.
+     */
+    ratingScore: { type: Number, default: 0, min: 0, max: 5 },
 
     publishedAt: { type: Date },
   },

@@ -360,6 +360,30 @@
                 },
                 "position": {
                   "type": "integer"
+                },
+                "credit": {
+                  "type": "object",
+                  "properties": {
+                    "author": {
+                      "type": "string"
+                    },
+                    "authorUrl": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "sourceUrl": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "author",
+                    "authorUrl",
+                    "source",
+                    "sourceUrl"
+                  ],
+                  "description": "Who took a photograph the shop did not, printed beside it as \"Photo by {author} on {source}\". Present on every Unsplash photograph (ADR-015)."
                 }
               },
               "required": [
@@ -394,7 +418,7 @@
           },
           "label": {
             "type": "string",
-            "description": "The definition’s current label. Absent where the attribute no longer applies to the product’s category."
+            "description": "The definition’s current label. Always present on the public product, which lists only the attributes its category still applies; absent on the console’s product, whose form takes labels from the effective attribute set."
           },
           "type": {
             "type": "string",
@@ -1588,6 +1612,30 @@
                 },
                 "position": {
                   "type": "integer"
+                },
+                "credit": {
+                  "type": "object",
+                  "properties": {
+                    "author": {
+                      "type": "string"
+                    },
+                    "authorUrl": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "sourceUrl": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "author",
+                    "authorUrl",
+                    "source",
+                    "sourceUrl"
+                  ],
+                  "description": "Who took a photograph the shop did not, printed beside it as \"Photo by {author} on {source}\". Present on every Unsplash photograph (ADR-015)."
                 }
               },
               "required": [
@@ -3969,6 +4017,59 @@
           "status",
           "requestId",
           "at"
+        ]
+      },
+      "UploadTicket": {
+        "type": "object",
+        "properties": {
+          "uploadUrl": {
+            "type": "string"
+          },
+          "apiKey": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "integer"
+          },
+          "folder": {
+            "type": "string"
+          },
+          "allowedFormats": {
+            "type": "string"
+          },
+          "signature": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "uploadUrl",
+          "apiKey",
+          "timestamp",
+          "folder",
+          "allowedFormats",
+          "signature"
+        ]
+      },
+      "UploadedPhotograph": {
+        "type": "object",
+        "properties": {
+          "publicId": {
+            "type": "string"
+          },
+          "width": {
+            "type": "integer"
+          },
+          "height": {
+            "type": "integer"
+          },
+          "blurDataUrl": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "publicId",
+          "width",
+          "height"
         ]
       }
     },
@@ -7534,8 +7635,11 @@
                         "imagePublicIds": {
                           "type": "array",
                           "items": {
-                            "type": "string"
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 500
                           },
+                          "maxItems": 24,
                           "default": []
                         },
                         "status": {
@@ -7566,7 +7670,8 @@
                       "properties": {
                         "publicId": {
                           "type": "string",
-                          "minLength": 1
+                          "minLength": 1,
+                          "maxLength": 500
                         },
                         "alt": {
                           "type": "string",
@@ -7582,12 +7687,45 @@
                           "exclusiveMinimum": 0
                         },
                         "blurDataUrl": {
-                          "type": "string"
+                          "type": "string",
+                          "maxLength": 8000,
+                          "pattern": "^data:image\\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$"
                         },
                         "position": {
                           "type": "integer",
                           "minimum": 0,
                           "default": 0
+                        },
+                        "credit": {
+                          "type": "object",
+                          "properties": {
+                            "author": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120
+                            },
+                            "authorUrl": {
+                              "type": "string",
+                              "maxLength": 500,
+                              "format": "uri"
+                            },
+                            "source": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 60
+                            },
+                            "sourceUrl": {
+                              "type": "string",
+                              "maxLength": 500,
+                              "format": "uri"
+                            }
+                          },
+                          "required": [
+                            "author",
+                            "authorUrl",
+                            "source",
+                            "sourceUrl"
+                          ]
                         }
                       },
                       "required": [
@@ -7933,8 +8071,11 @@
                         "imagePublicIds": {
                           "type": "array",
                           "items": {
-                            "type": "string"
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 500
                           },
+                          "maxItems": 24,
                           "default": []
                         },
                         "status": {
@@ -7964,7 +8105,8 @@
                       "properties": {
                         "publicId": {
                           "type": "string",
-                          "minLength": 1
+                          "minLength": 1,
+                          "maxLength": 500
                         },
                         "alt": {
                           "type": "string",
@@ -7980,12 +8122,45 @@
                           "exclusiveMinimum": 0
                         },
                         "blurDataUrl": {
-                          "type": "string"
+                          "type": "string",
+                          "maxLength": 8000,
+                          "pattern": "^data:image\\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$"
                         },
                         "position": {
                           "type": "integer",
                           "minimum": 0,
                           "default": 0
+                        },
+                        "credit": {
+                          "type": "object",
+                          "properties": {
+                            "author": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120
+                            },
+                            "authorUrl": {
+                              "type": "string",
+                              "maxLength": 500,
+                              "format": "uri"
+                            },
+                            "source": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 60
+                            },
+                            "sourceUrl": {
+                              "type": "string",
+                              "maxLength": 500,
+                              "format": "uri"
+                            }
+                          },
+                          "required": [
+                            "author",
+                            "authorUrl",
+                            "source",
+                            "sourceUrl"
+                          ]
                         }
                       },
                       "required": [
@@ -12318,6 +12493,124 @@
                     "data",
                     "page"
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/media/uploads": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin media"
+        ],
+        "summary": "A signed ticket for one photograph upload, straight from the browser to Cloudinary.",
+        "description": "Post the file to `uploadUrl` as multipart form data with `api_key`, `timestamp`, `folder`, `allowed_formats` and `signature` exactly as given. The signature covers the folder and the formats, and Cloudinary refuses it after an hour.",
+        "responses": {
+          "201": {
+            "description": "The ticket.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/UploadTicket"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Cloudinary is not configured on this shop.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/media/uploads/confirm": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "tags": [
+          "Admin media"
+        ],
+        "summary": "What Cloudinary holds under a public id just uploaded, as a product image stores it.",
+        "description": "Read from Cloudinary, not from the browser: width, height and a blur placeholder. Only ids in the shop’s products folder are looked up.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "publicId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  }
+                },
+                "required": [
+                  "publicId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The photograph.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/UploadedPhotograph"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Cloudinary is not configured, or did not answer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }

@@ -11,7 +11,7 @@ This repo does not start its own datastores. Bring them up from the root repo fi
 
 ```bash
 cd ..            # the haestore root
-npm run up       # Mongo (replica set), Redis, Meilisearch, Mailpit
+npm run up       # Mongo (replica set), Redis, Meilisearch
 npm run probe    # assert the platform actually supports transactions
 ```
 
@@ -23,15 +23,18 @@ npm install
 npm run dev              # http://localhost:5000
 ```
 
-| Script                            |                                  |
-| --------------------------------- | -------------------------------- |
-| `npm run dev`                     | tsx watch                        |
-| `npm run build` / `start`         | compile to `dist/`, run compiled |
-| `npm run typecheck`               | `tsc --noEmit`                   |
-| `npm run lint` / `lint:fix`       | ESLint flat config, type-aware   |
-| `npm run format` / `format:check` | Prettier                         |
-| `npm test`                        | Vitest                           |
-| `npm run check`                   | all of the above — what CI runs  |
+| Script                            |                                                                             |
+| --------------------------------- | --------------------------------------------------------------------------- |
+| `npm run dev`                     | tsx watch                                                                   |
+| `npm run build` / `start`         | compile to `dist/`, run compiled                                            |
+| `npm run typecheck`               | `tsc --noEmit`                                                              |
+| `npm run lint` / `lint:fix`       | ESLint flat config, type-aware                                              |
+| `npm run format` / `format:check` | Prettier                                                                    |
+| `npm test`                        | Vitest                                                                      |
+| `npm run test:integration`        | Vitest against an in-process replica set and a real Redis                   |
+| `npm run seed`                    | the demo shop — see docs/SEEDING.md in the root repo                        |
+| `npm run seed:photos`             | choose and lock the seed's Unsplash photographs, and report their downloads |
+| `npm run check`                   | all of the above — what CI runs                                             |
 
 ## Health
 

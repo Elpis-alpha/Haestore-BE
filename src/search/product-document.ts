@@ -1,4 +1,6 @@
+import type { AttributeType } from '../modules/catalog/attribute-types.js';
 import type { ProductAttrs } from '../modules/catalog/product.model.js';
+import { ratingScore } from '../modules/review/review-rules.js';
 
 /**
  * The shape of a product in Meilisearch.
@@ -22,7 +24,7 @@ import type { ProductAttrs } from '../modules/catalog/product.model.js';
  * dot, so `attr.<key>` is unambiguous and needs no escaping.
  */
 
-export type SearchAttributeValue = string | string[] | number | boolean;
+export type SearchAttributeValue = string | string[] | number | number[] | boolean;
 
 export type ProductSearchDocument = {
   id: string;
@@ -44,6 +46,8 @@ export type ProductSearchDocument = {
 
   ratingAverage: number;
   ratingCount: number;
+  /** The Bayesian average `sort=rating` orders by. Never shown. */
+  ratingScore: number;
 
   /** Epoch milliseconds. Meilisearch sorts numbers, not date strings. */
   createdAt: number;
@@ -105,6 +109,8 @@ function attributeValue(
 export function toSearchDocument(
   product: ProductAttrs & { _id: unknown },
   searchableKeys: ReadonlySet<string>,
+  /** Definition types by key, for the values of variant axes. See `axisValues` below. */
+  types: ReadonlyMap<string, AttributeType> = new Map(),
 ): ProductSearchDocument {
   const attr: Record<string, SearchAttributeValue> = {};
   const searchableText: string[] = [];
@@ -115,6 +121,10 @@ export function toSearchDocument(
     if (searchableKeys.has(attribute.key) && attribute.displayValue) {
       searchableText.push(attribute.displayValue);
     }
+  }
+
+  for (const [key, value] of axisValues(product, types)) {
+    if (attr[key] === undefined) attr[key] = value;
   }
 
   const image = (product.images ?? [])
@@ -149,6 +159,10 @@ export function toSearchDocument(
 
     ratingAverage: product.ratingAverage ?? 0,
     ratingCount: product.ratingCount ?? 0,
+    // Derived here for a product written before the field existed, so the sort does not
+    // wait for that product's next review to place it.
+    ratingScore:
+      product.ratingScore ?? ratingScore(product.ratingAverage ?? 0, product.ratingCount ?? 0),
 
     createdAt: createdAt.getTime(),
     // Falls back to createdAt so `sort=newest` never has to cope with a null, which in
@@ -169,4 +183,51 @@ export function toSearchDocument(
     attr,
     ...(searchableText.length > 0 ? { attrText: searchableText.join(' · ') } : {}),
   };
+}
+
+/**
+ * What a product is sold in, as filterable facts: every value its active variants take on each
+ * axis.
+ *
+ * A mug that comes in celadon is a celadon mug to someone filtering Cups & mugs by glaze, but
+ * the glaze lives on its variants, not among its attributes — the product has no single glaze
+ * to state. Until Phase 10 the document carried the attributes alone, so every filter on an
+ * axis (glaze, grind, weight, scent, colour, bed size) matched only the few products sold one
+ * way, and the seeded shop's filters found almost nothing.
+ *
+ * A value the product states itself wins over this, and inactive variants are not offered, so
+ * they are not facts about what can be bought. Numeric axes are stored as strings on variants
+ * and indexed as numbers, so a range filter compares them as numbers; a yes-or-no axis becomes
+ * a boolean only when every variant agrees, since a product sold both ways matches neither
+ * answer more than the other.
+ */
+function axisValues(
+  product: Pick<ProductAttrs, 'variantAxes' | 'variants'>,
+  types: ReadonlyMap<string, AttributeType>,
+): [string, SearchAttributeValue][] {
+  const active = (product.variants ?? []).filter((variant) => variant.status === 'active');
+  const facts: [string, SearchAttributeValue][] = [];
+
+  for (const key of product.variantAxes ?? []) {
+    const values = [
+      ...new Set(
+        active.flatMap((variant) =>
+          variant.axisValues.filter((a) => a.key === key).map((a) => a.value),
+        ),
+      ),
+    ];
+    if (values.length === 0) continue;
+
+    const type = types.get(key);
+    if (type === 'number') {
+      const numbers = values.map(Number).filter(Number.isFinite);
+      if (numbers.length > 0) facts.push([key, numbers]);
+    } else if (type === 'boolean') {
+      if (values.length === 1) facts.push([key, values[0] === 'true']);
+    } else {
+      facts.push([key, values]);
+    }
+  }
+
+  return facts;
 }

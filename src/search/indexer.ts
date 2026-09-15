@@ -7,7 +7,12 @@ import type { EffectiveAttribute } from '../modules/catalog/effective-attributes
 import { canBeVariantAxis, type AttributeType } from '../modules/catalog/attribute-types.js';
 import { meili, PRODUCTS_INDEX } from './meili.js';
 import { toSearchDocument } from './product-document.js';
-import { buildSearchSettings, loadDefinitionsForSettings, loadSearchableKeys } from './settings.js';
+import {
+  buildSearchSettings,
+  loadAttributeTypes,
+  loadDefinitionsForSettings,
+  loadSearchableKeys,
+} from './settings.js';
 import { forgetFilterableFields } from './index-capabilities.js';
 import type { SearchJob } from './queue.js';
 
@@ -41,8 +46,10 @@ export async function indexProduct(productId: string): Promise<void> {
     return;
   }
 
-  const searchableKeys = await loadSearchableKeys();
-  await index.addDocuments([toSearchDocument(product, searchableKeys)], { primaryKey: 'id' });
+  const [searchableKeys, types] = await Promise.all([loadSearchableKeys(), loadAttributeTypes()]);
+  await index.addDocuments([toSearchDocument(product, searchableKeys, types)], {
+    primaryKey: 'id',
+  });
   logger.debug({ productId }, 'search: indexed');
 }
 
@@ -56,7 +63,7 @@ export async function indexProduct(productId: string): Promise<void> {
  * exceed its lifetime limit and roll the whole move back.
  */
 export async function indexCategoryBranch(categoryId: string): Promise<void> {
-  const searchableKeys = await loadSearchableKeys();
+  const [searchableKeys, types] = await Promise.all([loadSearchableKeys(), loadAttributeTypes()]);
   const index = meili.index(PRODUCTS_INDEX);
 
   let batch: ReturnType<typeof toSearchDocument>[] = [];
@@ -75,7 +82,7 @@ export async function indexCategoryBranch(categoryId: string): Promise<void> {
       stale.push(String(product._id));
       continue;
     }
-    batch.push(toSearchDocument(product, searchableKeys));
+    batch.push(toSearchDocument(product, searchableKeys, types));
     if (batch.length >= BATCH_SIZE) {
       await index.addDocuments(batch, { primaryKey: 'id' });
       indexed += batch.length;
@@ -169,7 +176,7 @@ export async function backfillDefinition(defId: string): Promise<void> {
     inheritedFrom: null,
   };
 
-  const searchableKeys = await loadSearchableKeys();
+  const [searchableKeys, types] = await Promise.all([loadSearchableKeys(), loadAttributeTypes()]);
   const index = meili.index(PRODUCTS_INDEX);
 
   let rewritten = 0;
@@ -198,7 +205,7 @@ export async function backfillDefinition(defId: string): Promise<void> {
       rewritten += 1;
     }
     if (product.status === 'active') {
-      batch.push(toSearchDocument(product.toObject(), searchableKeys));
+      batch.push(toSearchDocument(product.toObject(), searchableKeys, types));
       if (batch.length >= BATCH_SIZE) {
         await index.addDocuments(batch, { primaryKey: 'id' });
         batch = [];

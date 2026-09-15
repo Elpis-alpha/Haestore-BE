@@ -1,4 +1,5 @@
 import type { Types } from 'mongoose';
+import { keepGroupsTogether } from './attribute-groups.js';
 import { redis } from '../../cache/redis.js';
 import { logger } from '../../lib/logger.js';
 import { notFound } from '../../lib/errors.js';
@@ -191,7 +192,9 @@ async function computeEffectiveAttributes(categoryId: string): Promise<Effective
     categoryId: String(category._id),
     categoryPath: category.path,
     validationMode: category.validationMode,
-    attributes,
+    // Groups kept together, so an inherited attribute and a shelf's own under the same
+    // heading are drawn under one heading. See attribute-groups.ts.
+    attributes: keepGroupsTogether(attributes),
   };
 }
 

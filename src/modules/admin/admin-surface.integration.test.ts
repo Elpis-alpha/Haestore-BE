@@ -9,6 +9,7 @@ import { adminOrderRouter } from '../order/admin-order.routes.js';
 import { adminStorefrontRouter } from '../storefront/storefront.routes.js';
 import { adminReviewRouter } from '../review/review.routes.js';
 import { adminSupportRouter } from '../support/support.routes.js';
+import { adminMediaRouter } from '../media/media.routes.js';
 import { adminRouter } from './admin.routes.js';
 import { AdminAudit } from './audit.model.js';
 
@@ -38,6 +39,7 @@ const MOUNTS: [string, Router][] = [
   ['/storefront', adminStorefrontRouter],
   ['/reviews', adminReviewRouter],
   ['/support', adminSupportRouter],
+  ['/media', adminMediaRouter],
 ];
 
 /** Every route under /api/admin, with its parameters filled in with plausible values. */

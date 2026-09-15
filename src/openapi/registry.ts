@@ -53,6 +53,7 @@ import {
   hideReviewSchema,
   writeReviewSchema,
 } from '../modules/review/review.schema.js';
+import { confirmUploadSchema } from '../modules/media/media.schema.js';
 import {
   openTicketSchema,
   replySchema,
@@ -199,6 +200,19 @@ const productCardSchema = registry.register(
           height: z.number().int().optional(),
           blurDataUrl: z.string().optional(),
           position: z.number().int(),
+          credit: z
+            .object({
+              author: z.string(),
+              authorUrl: z.string(),
+              source: z.string(),
+              sourceUrl: z.string(),
+            })
+            .optional()
+            .openapi({
+              description:
+                'Who took a photograph the shop did not, printed beside it as "Photo by ' +
+                '{author} on {source}". Present on every Unsplash photograph (ADR-015).',
+            }),
         }),
       ),
       ratingAverage: z.number(),
@@ -217,8 +231,9 @@ const productAttributeSchema = registry.register(
         .optional()
         .openapi({
           description:
-            'The definition’s current label. Absent where the attribute no longer applies to the ' +
-            'product’s category.',
+            'The definition’s current label. Always present on the public product, which lists ' +
+            'only the attributes its category still applies; absent on the console’s product, ' +
+            'whose form takes labels from the effective attribute set.',
         }),
       type: z.enum(ATTRIBUTE_TYPES),
       valueString: z.string().optional(),
@@ -2837,5 +2852,66 @@ registry.registerPath({
       ),
       'A page of the log.',
     ),
+  },
+});
+
+/* ------------------------------------------------------------------- media -- */
+
+const adminMedia = { security: [{ sessionCookie: [] }], tags: ['Admin media'] };
+
+registry.registerPath({
+  ...adminMedia,
+  method: 'post',
+  path: '/api/admin/media/uploads',
+  summary: 'A signed ticket for one photograph upload, straight from the browser to Cloudinary.',
+  description:
+    'Post the file to `uploadUrl` as multipart form data with `api_key`, `timestamp`, ' +
+    '`folder`, `allowed_formats` and `signature` exactly as given. The signature covers the ' +
+    'folder and the formats, and Cloudinary refuses it after an hour.',
+  responses: {
+    201: json(
+      envelope(
+        z
+          .object({
+            uploadUrl: z.string(),
+            apiKey: z.string(),
+            timestamp: z.number().int(),
+            folder: z.string(),
+            allowedFormats: z.string(),
+            signature: z.string(),
+          })
+          .openapi('UploadTicket'),
+      ),
+      'The ticket.',
+    ),
+    503: json(errorSchema, 'Cloudinary is not configured on this shop.'),
+  },
+});
+
+registry.registerPath({
+  ...adminMedia,
+  method: 'post',
+  path: '/api/admin/media/uploads/confirm',
+  summary: 'What Cloudinary holds under a public id just uploaded, as a product image stores it.',
+  description:
+    'Read from Cloudinary, not from the browser: width, height and a blur placeholder. Only ' +
+    'ids in the shop’s products folder are looked up.',
+  request: { body: { content: { 'application/json': { schema: confirmUploadSchema } } } },
+  responses: {
+    200: json(
+      envelope(
+        z
+          .object({
+            publicId: z.string(),
+            width: z.number().int(),
+            height: z.number().int(),
+            blurDataUrl: z.string().optional(),
+          })
+          .openapi('UploadedPhotograph'),
+      ),
+      'The photograph.',
+    ),
+    404: errors[404],
+    503: json(errorSchema, 'Cloudinary is not configured, or did not answer.'),
   },
 });

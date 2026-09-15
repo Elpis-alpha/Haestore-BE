@@ -205,12 +205,16 @@ catalogRouter.get('/products/:slug', async (req, res) => {
       ...product,
       // Each with its definition's current label, so the specification table names every
       // row in the admin's words — not only the filterable ones the category endpoint lists.
+      //
+      // Only what the product's shelf still applies. A value for an attribute since archived,
+      // unbound or suppressed stays on the product, so restoring the attribute brings it back,
+      // but it is not a fact the shop presents any more. Until Phase 10 such a value was listed
+      // after every group under its old heading, which drew that heading twice on the page —
+      // found on the seeded mug after the end-to-end suite archived its test attribute.
       attributes: [...product.attributes]
-        .sort((a, b) => (groupOrder.get(a.key) ?? 999) - (groupOrder.get(b.key) ?? 999))
-        .map((attribute) => {
-          const label = labels.get(attribute.key);
-          return label ? { ...attribute, label } : attribute;
-        }),
+        .filter((attribute) => groupOrder.has(attribute.key))
+        .sort((a, b) => groupOrder.get(a.key)! - groupOrder.get(b.key)!)
+        .map((attribute) => ({ ...attribute, label: labels.get(attribute.key)! })),
       /**
        * Each axis this product sells along, with its label and its options' labels and
        * swatches. A variant's `axisValues` carry the admin's slugs — `whole-bean` — and
